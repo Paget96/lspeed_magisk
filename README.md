@@ -1,30 +1,26 @@
-<h1 align="center">Unity (Un)Installer Template</h1>
+<h1 align="center">L Speed magisk</h1>
 
 <div align="center">
   <!-- Version -->
-    <img src="https://img.shields.io/badge/Version-v4.4-blue.svg?longCache=true&style=popout-square"
+    <img src="https://img.shields.io/badge/Version-v1.0-blue.svg?longCache=true&style=popout-square"
       alt="Version" />
   <!-- Last Updated -->
-    <img src="https://img.shields.io/badge/Updated-August 10, 2019-green.svg?longCache=true&style=flat-square"
+    <img src="https://img.shields.io/badge/Updated-November 09, 2019-green.svg?longCache=true&style=flat-square"
       alt="_time_stamp_" />
 </div>
 
 <div align="center">
-  <strong>Unity Installer allows 1 zip to work for multiple devices and root solutions. More details in the 
-    <a href="https://github.com/Zackptg5/Unity/wiki">wiki</a>.
+  <strong>The most advanced Android tweaker. More details in the 
+    <a href="https://github.com/Paget96/LSpeed/">wiki</a>.
 </div>
 
 <div align="center">
   <h3>
-    <a href="https://github.com/Zackptg5/Unity">
+    <a href="https://github.com/Paget96/lspeed_magisk">
       Source Code
     </a>
     <span> | </span>
-    <a href="https://github.com/Zackptg5/Unity-Addons">
-      Addons Repository
-    </a>
-    <span> | </span>
-    <a href="https://forum.xda-developers.com/apps/magisk/module-audio-modification-library-t3579612">
+    <a href="https://forum.xda-developers.com/apps/l-speed">
       XDA
     </a>
   </h3>
@@ -32,5 +28,3 @@
 
 ## Compatibility
 - Magisk 18.0 +
-- All other root or rootless solutions (init.d support for boot scripts is required if not using Magisk or SuperSU. Try [Init.d Injector](https://forum.xda-developers.com/android/software-hacking/mod-universal-init-d-injector-wip-t3692105))
-# lspeed_magisk
