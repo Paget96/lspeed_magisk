@@ -6,9 +6,23 @@ date=09-11-2019;
 # Developer : Paget96
 # Paypal : https://paypal.me/Paget96
 
+# To select current profile go to /data/lspeed/setup
+# and edit file "profile"
+# 0 - default
+# 1 - power saving
+# 2 - balanced
+# 3 - performance
+# Save the file and reboot phone
+#
+# To check if mod working go to /data/lspeed/logs/main_log.log
+# that's main output after executing service.sh
+#
+#
+#
+
+
 # Variables
 date="[$(date +"%H:%M:%S %d-%m-%Y")]";
-
 
 #PATHS
 LSPEED=/data/lspeed
