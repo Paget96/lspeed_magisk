@@ -1,4 +1,4 @@
-<h1 align="center">L Speed magisk</h1>
+﻿<h1 align="center">L Speed magisk</h1>
 
 <div align="center">
   <!-- Version -->
