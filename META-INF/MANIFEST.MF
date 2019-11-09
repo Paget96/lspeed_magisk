@@ -1,0 +1,51 @@
+Manifest-Version: 1.0
+Created-By: 1.0 (Android SignApk)
+
+Name: META-INF/com/google/android/updater-script
+SHA1-Digest: Lzl1y1cC6TvXytLj6okU81/P8AA=
+
+Name: uninstall.sh
+SHA1-Digest: ziGeOMdcXtcx2poUjDkn2Idj/W0=
+
+Name: install.sh
+SHA1-Digest: s2qghsdQx+FrVDMENHWVNk38JAg=
+
+Name: META-INF/com/google/android/update-binary
+SHA1-Digest: Qtt038jvkzP05zaSBITuctlchLU=
+
+Name: common/system.prop
+SHA1-Digest: jR5a7V103p009OBPe5IKKPeeDIA=
+
+Name: common/unityfiles/util_functions.sh
+SHA1-Digest: VR+YziM+6Acz8GLN5UwlPha1bSM=
+
+Name: common/service.sh
+SHA1-Digest: Z5zPxFcz36dv96qhXayIpQO8DMc=
+
+Name: common/unityfiles/tools/arm/busybox
+SHA1-Digest: O8ZJ7t88uGrtiatbaz/G8inKIdc=
+
+Name: README.md
+SHA1-Digest: +fDPL0ISPycfO5BQoc8IsvgNPHY=
+
+Name: common/unityfiles/addon.sh
+SHA1-Digest: 3dGuGRA4GsIrnEGKwIwqYQ7d0X0=
+
+Name: module.prop
+SHA1-Digest: vYzTI28V5yAK0JTkF0Jsh8FQ2Pc=
+
+Name: common/unity_upgrade.sh
+SHA1-Digest: jBE8Kses3wFJnsuPs01kG0CqXUI=
+
+Name: common/sepolicy.sh
+SHA1-Digest: ueWk5P4o2YFoQSYLnn4VwG0e55c=
+
+Name: common/post-fs-data.sh
+SHA1-Digest: /lTE+erKcFsRmxf56MxETZ+RkDs=
+
+Name: LICENSE
+SHA1-Digest: 3I8uVwv0MUJ9vDurnU1VG1OmAgg=
+
+Name: common/unityfiles/tools/x86/busybox
+SHA1-Digest: f9a/YSC77rjp4mByKl5RmOLAilI=
+

@@ -1,4 +1,4 @@
-﻿#!/system/bin/sh
+#!/system/bin/sh
 # L Speed tweak
 # Codename : lspeed
 version="v1.0-alpha1";
@@ -9,6 +9,15 @@ date=09-11-2019;
 # Variables
 date="[$(date +"%H:%M:%S %d-%m-%Y")]";
 
+
+#PATHS
+LSPEED=/data/lspeed
+LOG_DIR=$LSPEED/logs
+LOG=$LOG_DIR/main_log.log
+SETUP_DIR=$LSPEED/setup
+PROFILE=$SETUP_DIR/profile
+USER_PROFILE=$SETUP_DIR/user_profile
+
 # Detecting modules path
 if [ -d /data/adb/modules ]; then
 	MODULES=/data/adb/modules
@@ -18,25 +27,59 @@ elif [ -d /sbin/.magisk/img ]; then
 	MODULES=/sbin/.magisk/img
 fi;
 
-# If path not exists create it
-if [ ! -d /data/LSpeed ]; then
-	mkdir -p /data/LSpeed
-fi;
-LSPEED=/data/LSpeed
-LOG=LSPEED/lspeed.log
-
 # Functions
+createFile() {
+    touch "$1"
+	chmod 0644 "$1"
+}
+
 sendToLog() {
-    echo $1 | tee -a $LOG;
+    echo "$1" | tee -a $LOG;
 }
 	
 write() {
-    echo -n $2 > $1
+	chmod 0644 "$1"
+    echo -n "$2" > "$1"
 }
 
-sendToLog " $date Starting L Speed $date";
+lockFile() {
+	chmod 0644 "$1"
+    echo -n "$2" > "$1"
+	chmod 044 "$1"
+}
+R
+# Setting up default L Speed dirs and paths
+# If for any reason any of them are missing, add them manually
+if [ ! -d $LSPEED ]; then
+	mkdir -p $LSPEED
+fi;
 
+if [ ! -d $LOG_DIR ]; then
+	mkdir -p $LOG_DIR
+fi;
 
+if [ -d $LOG_DIR ]; then
+	createFile $LOG
+fi;
+
+if [ ! -d $SETUP_DIR ]; then
+	mkdir -p $SETUP_DIR
+fi;
+
+if [ -d $SETUP_DIR ]; then
+	createFile $PROFILE
+	write $PROFILE "0"
+	createFile $USER_PROFILE
+	write $USER_PROFILE "0"
+fi;
+
+# Remove old logs when running the script again
+if [ -d $LOG_DIR ]; then
+	rm $LOG_DIR
+fi;
+
+# Tweaks
+batteryImprovements() {
 sendToLog "$date Activating battery improvements...";
 
 # Disabling ksm
@@ -86,7 +129,7 @@ fi;
 setprop ro.audio.flinger_standbytime_ms 300
 sendToLog "$date Set low audio flinger standby delay to 300ms for reducing power consumption";
 
-for i in $(ls /sys/class/scsi_disk); do
+for i in /sys/class/scsi_disk/*; do
 write /sys/class/scsi_disk/"$i"/cache_type "temporary none"
 sendToLog "$date Set cache type to temporary none in $i";
 done
@@ -149,5 +192,40 @@ sendToLog "$date PM2 module idle sleep mode enabled";
 fi;
 
 sendToLog "$date Battery improvements are enabled";
+}
+
+
+sendToLog "$date Starting L Speed";
+
+# Default preset
+#userProfile=$(cat $USER_PROFILE);
+#if [ -e $USER_PROFILE ] && [ "$userProfile" != "0" ]; then
+	# set up user defined profile
+	#currentProfile=$(cat $PROFILE);
+	#sendToLog "$date Setting up user profile";
+#else 
+
+currentProfile=$(cat $PROFILE);
+if [ "$currentProfile" -eq 0 ]  || [ ! -e $PROFILE ]; then
+# use default
+sendToLog "$date Applying default profile";
+batteryImprovements;
+		
+elif [ "$currentProfile" -eq 1 ]; then
+#use power saving
+sendToLog "$date Applying power saving profile";
+batteryImprovements;
+
+elif [ "$currentProfile" -eq 2 ]; then
+# use balanced
+sendToLog "$date Applying balanced profile";
+batteryImprovements;
+
+elif [ "$currentProfile" -eq 3 ]; then
+# use performance
+sendToLog "$date Applying performance profile";
+batteryImprovements;
+		
+fi;
 
 exit 0
