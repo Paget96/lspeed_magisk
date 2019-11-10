@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # L Speed tweak
 # Codename : lspeed
-version="v1.0-alpha2";
+version="v1.0-alpha3";
 date=10-11-2019;
 # Developer : Paget96
 # Paypal : https://paypal.me/Paget96
@@ -2802,6 +2802,7 @@ netTcpTweaks;
 rilTweaks;
 disableDebugging;
 kernelPanicDisabled;
+swappinessTendency10;
 ramManagerBalanced;
 virtualMemoryTweaksBalanced;
 
@@ -2819,6 +2820,7 @@ netTcpTweaks;
 rilTweaks;
 disableDebugging;
 kernelPanicDisabled;
+swappinessTendency25;
 ramManagerBalanced;
 virtualMemoryTweaksBattery;
 
@@ -2836,6 +2838,7 @@ netTcpTweaks;
 rilTweaks;
 disableDebugging;
 kernelPanicDisabled;
+swappinessTendency25;
 ramManagerBalanced;
 virtualMemoryTweaksBalanced;
 
@@ -2854,6 +2857,7 @@ rilTweaks;
 disableDebugging;
 kernelPanicDisabled;
 ramManagerGaming;
+swappinessTendency1;
 virtualMemoryTweaksPerformance;
 
 sendToLog "$date Successfully applied performance profile";
