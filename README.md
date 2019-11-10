@@ -11,7 +11,7 @@
 
 <div align="center">
   <strong>The most advanced Android tweaker. More details in the 
-    <a href="https://github.com/Paget96/LSpeed/">wiki</a>.
+    <a href="https://github.com/Paget96/LSpeed/">Official GitHub page</a>.
 </div>
 
 <div align="center">
