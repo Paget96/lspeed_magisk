@@ -33,6 +33,11 @@
 The mod will and should work on any device that meets its minimum requirement.
 You only need a rooted Android device to function properly.
 
+<div align="center">
+**Module with prebuilt manager**
+
+<img src="https://github.com/Paget96/lspeed_magisk/blob/master/screenshots/2.png" width="192" height="317"/> <img src="https://github.com/Paget96/lspeed_magisk/blob/master/screenshots/1.png" width="192" height="317"/>
+</div>
 
 **Requirements:**
 1. Root (Magisk 18.0 +)
