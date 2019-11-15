@@ -1,8 +1,8 @@
 #!/system/bin/sh
 # L Speed tweak
 # Codename : lspeed
-version="v1.0-alpha3";
-date=10-11-2019;
+version="v1.0-beta2";
+date=15-11-2019;
 # Developer : Paget96
 # Paypal : https://paypal.me/Paget96
 
@@ -20,14 +20,15 @@ date=10-11-2019;
 #
 #
 
-
 # Variables
 date="[$(date +"%H:%M:%S %d-%m-%Y")]";
 
 #PATHS
 LSPEED=/data/lspeed
+
 LOG_DIR=$LSPEED/logs
 LOG=$LOG_DIR/main_log.log
+
 SETUP_DIR=$LSPEED/setup
 PROFILE=$SETUP_DIR/profile
 USER_PROFILE=$SETUP_DIR/user_profile
@@ -44,58 +45,106 @@ fi;
 # Functions
 createFile() {
     touch "$1"
-	chmod 0644 "$1"
+	chmod 0644 "$1" 2> /dev/null
 }
 
 sendToLog() {
-    echo "$1" | tee -a $LOG;
+    echo "$1" | tee -a $LOG
 }
 	
 write() {
-	chmod 0644 "$1"
-    echo -n "$2" > "$1"
+	chmod 0644 "$1" 2> /dev/null
+    echo -n "$2" > "$1" 2> /dev/null
 }
 
 lockFile() {
-	chmod 0644 "$1"
-    echo -n "$2" > "$1"
-	chmod 044 "$1"
+	chmod 0644 "$1" 2> /dev/null
+    echo -n "$2" > "$1" 2> /dev/null
+	chmod 044 "$1" 2> /dev/null
 }
-R
-# Setting up default L Speed dirs and paths
+
+# Setting up default L Speed dirs and files
 # If for any reason any of them are missing, add them manually
 if [ ! -d $LSPEED ]; then
 	mkdir -p $LSPEED
 fi;
 
-if [ ! -d $LOG_DIR ]; then
+# Remove old logs when running the script again
+# and create dir if not exists
+if [ -d $LOG_DIR ]; then
+	rm -rf $LOG_DIR
+	mkdir -p $LOG_DIR
+else
 	mkdir -p $LOG_DIR
 fi;
 
-if [ -d $LOG_DIR ]; then
-	createFile $LOG
-fi;
-
+# Create setup dir and child files and dirs
+# Needed for module working at all
+# /data/lsepeed/setup/profile
+# /data/lsepeed/setup/user_profile/*
 if [ ! -d $SETUP_DIR ]; then
 	mkdir -p $SETUP_DIR
 fi;
 
-if [ -d $SETUP_DIR ]; then
+if [ -f $PROFILE ]; then
 	createFile $PROFILE
-	createFile $USER_PROFILE
-	write $USER_PROFILE "0"
 fi;
 
-# Read current profile
-currentProfile=$(cat $PROFILE);
-
-if [ -e $PROFILE ] && [ "$currentProfile" -lt 1 ]; then
-	write $PROFILE "0"
+# Remove user_profile if it's already mounted as a file
+# This is needed to prevent crashes while running the script
+if [ -f $USER_PROFILE ]; then
+	rm -rf $USER_PROFILE
 fi;
 
-# Remove old logs when running the script again
-if [ -d $LOG_DIR ]; then
-	rm $LOG_DIR
+# Directory dedicated for storing current profile
+if [ ! -d $USER_PROFILE ]; then
+	mkdir -p $USER_PROFILE
+fi;
+
+if [ -d $USER_PROFILE ]; then
+	createFile $USER_PROFILE/battery_improvements
+	
+	# CPU section
+	createFile $USER_PROFILE/cpu_optimization
+	createFile $USER_PROFILE/gov_tuner
+	
+	createFile $USER_PROFILE/entropy
+	
+	# GPU section
+	createFile $USER_PROFILE/gpu_optimizer
+	createFile $USER_PROFILE/optimize_buffers
+	createFile $USER_PROFILE/render_opengles_using_gpu
+	createFile $USER_PROFILE/use_opengl_skia
+
+	# I/O tweaks section
+	createFile $USER_PROFILE/disable_io_stats
+	createFile $USER_PROFILE/io_blocks_optimization
+	createFile $USER_PROFILE/io_extended_queue
+	createFile $USER_PROFILE/partition_remount
+	createFile $USER_PROFILE/scheduler_tuner
+	createFile $USER_PROFILE/sd_tweak
+
+	# LNET tweaks section
+	createFile $USER_PROFILE/dns
+	createFile $USER_PROFILE/net_buffers
+	createFile $USER_PROFILE/net_speed_plus
+	createFile $USER_PROFILE/net_tcp
+	createFile $USER_PROFILE/optimize_ril
+	
+	# Other
+	createFile $USER_PROFILE/disable_debugging
+	createFile $USER_PROFILE/disable_kernel_panic
+	
+	# RAM manager section
+	createFile $USER_PROFILE/ram_manager
+	createFile $USER_PROFILE/disable_multitasking_limitations
+	createFile $USER_PROFILE/low_ram_flag
+	createFile $USER_PROFILE/oom_killer
+	createFile $USER_PROFILE/swappiness
+	createFile $USER_PROFILE/virtual_memory
+	createFile $USER_PROFILE/heap_optimization
+	createFile $USER_PROFILE/zram_optimization
+
 fi;
 
 #
@@ -151,7 +200,7 @@ fi;
 setprop ro.audio.flinger_standbytime_ms 300
 sendToLog "$date Set low audio flinger standby delay to 300ms for reducing power consumption";
 
-for i in /sys/class/scsi_disk/*; do
+for i in ls -d /sys/class/scsi_disk/*; do
 write /sys/class/scsi_disk/"$i"/cache_type "temporary none"
 sendToLog "$date Set cache type to temporary none in $i";
 done
@@ -866,22 +915,6 @@ sysctl -e -w kernel.random.urandom_min_reseed_secs=90
 echo "$date Moderate entropy profile activated" >> $LOG;
 }
 
-disableForceGpuRendering() {
-echo "$date Disable force CPU rendering" >> $LOG;
-
-setprop persist.sys.ui.hw 0
-
-echo "$date Force GPU rendering disabled" >> $LOG;
-}
-
-enableForceGpuRendering() {
-echo "$date Enable force CPU rendering" >> $LOG;
-
-setprop persist.sys.ui.hw 1
-
-echo "$date Force GPU rendering enabled" >> $LOG;
-}
-
 gpuOptimizerBalanced() {
 echo "$date Optimizing GPU..." >> $LOG;
 
@@ -1190,7 +1223,7 @@ setprop debug.egl.buffcount 4
 echo "$date GPU buffer count set to 4" >> $LOG;
 }
 
-renderOpenglesUsingTheGpu() {
+renderOpenglesUsingGpu() {
 echo "$date Setting GPU to render OpenGLES..." >> $LOG;
 
 setprop debug.egl.hw 1
@@ -1216,18 +1249,6 @@ echo "$date iostats=0 in $i" >> $LOG;
 done
 
 echo "$date I/O Stats disabled" >> $LOG;
-}
-
-enableIoStats() {
-echo "$date Enabling I/O Stats..." >> $LOG;
-
-for i in $(find /sys -name iostats);
-do
-echo "1" > "$i";
-echo "$date iostats=1 in $i" >> $LOG;
-done
-
-echo "$date I/O Stats enabled" >> $LOG;
 }
 
 ioBlocksOptimizationBalanced() {
@@ -1450,7 +1471,7 @@ echo "$date I/O extend queue is activated" >> $LOG;
 partitionRemount() {
 echo "$date Remounting partitions for better IO speed..." >> $LOG;
 
-for ext4 in $(mount |grep ext4 |cut -d " " -f3);
+for ext4 in $(mount | grep ext4 | cut -d " " -f3);
 do
 mount -o remount,noatime -t auto "$ext4"
 done
@@ -1795,7 +1816,7 @@ fi;
 echo "$date Logging disabled..." >> $LOG;
 }
 
-kernelPanicDisabled() {
+disableKernelPanic() {
 echo "$date Disabling kernel panic..." >> $LOG;
 
 sysctl -e -w vm.panic_on_oom=0
@@ -1804,17 +1825,6 @@ sysctl -e -w kernel.panic=0
 sysctl -e -w kernel.panic_on_warn=0
 
 echo "$date Kernel panic disabled" >> $LOG;
-}
-
-kernelPanicEnabled() {
-echo "$date Enabling kernel panic..." >> $LOG;
-
-sysctl -e -w vm.panic_on_oom=1
-sysctl -e -w kernel.panic_on_oops=1
-sysctl -e -w kernel.panic=30
-sysctl -e -w kernel.panic_on_warn=1
-
-echo "$date Kernel panic enabled" >> $LOG;
 }
 
 disableMultitaskingLimitations() {
@@ -1848,28 +1858,6 @@ setprop ENFORCE_PROCESS_LIMIT false
 echo "$date ENFORCE_PROCESS_LIMIT=false" >> $LOG;
 
 echo "$date Multitasking limitations disabled" >> $LOG;
-}
-
-lmkFastRunDisabled() {
-echo "$date Disabling LMK fast_run..." >> $LOG;
-
-lmk_fast_run=/sys/module/lowmemorykiller/parameters/lmk_fast_run
-if [ -e $lmk_fast_run ]; then
-echo "0" > $lmk_fast_run
-fi;
-
-echo "$date LMK fast_run disabled" >> $LOG;
-}
-
-lmkFastRunEnabled() {
-echo "$date Enabling LMK fast_run..." >> $LOG;
-
-lmk_fast_run=/sys/module/lowmemorykiller/parameters/lmk_fast_run
-if [ -e $lmk_fast_run ]; then
-echo "1" > $lmk_fast_run
-fi;
-
-echo "$date LMK fast_run enabled" >> $LOG;
 }
 
 lowRamFlagDisabled() {
@@ -1911,9 +1899,8 @@ echo "$date OOM killer enabled" >> $LOG;
 }
 
 ramManagerBalanced() {
-activatedTweaks="/data/data/com.paget96.lspeedandroid/shared_prefs/act_scripts.xml";
 
-memTotal=$(free -m |awk '/^Mem:/{print $2}');
+memTotal=$(free -m | awk '/^Mem:/{print $2}');
 
 fa=$(((memTotal*2/100)*1024/4));
 va=$(((memTotal*3/100)*1024/4));
@@ -1989,7 +1976,7 @@ echo "$date oom_reaper=$oomReaper" >> $LOG;
 fi;
 
 parameter_lmk_fast_run=/sys/module/lowmemorykiller/parameters/lmk_fast_run;
-if [ -e $parameter_lmk_fast_run ] && !grep "lmk_fast_run" "$activatedTweaks"; then
+if [ -e $parameter_lmk_fast_run ]; then
 chmod 0666 $parameter_lmk_fast_run;
 echo "$fastRun" > $parameter_lmk_fast_run;
 echo "$date lmk_fast_run=$fastRun" >> $LOG;
@@ -2011,7 +1998,7 @@ echo "$date fudge_swap=$fudgeSwap" >> $LOG;
 fi;
 
 parameter_minfree=/sys/module/lowmemorykiller/parameters/minfree;
-if [ -e $parameter_minfree ] && !grep "minfree" "$activatedTweaks"; then
+if [ -e $parameter_minfree ]; then
 chmod 0666 $parameter_minfree;
 echo "$minFree" > $parameter_minfree;
 echo "$date minfree=$minFree" >> $LOG;
@@ -2035,9 +2022,8 @@ echo "$date Balanced RAM manager profile for $((memTotal))mb devices successfull
 }
 
 ramManagerGaming() {
-activatedTweaks="/data/data/com.paget96.lspeedandroid/shared_prefs/act_scripts.xml";
 
-memTotal=$(free -m |awk '/^Mem:/{print $2}');
+memTotal=$(free -m | awk '/^Mem:/{print $2}');
 
 fa=$(((memTotal*3/100)*1024/4));
 va=$(((memTotal*4/100)*1024/4));
@@ -2113,7 +2099,7 @@ echo "$date oom_reaper=$oomReaper" >> $LOG;
 fi;
 
 parameter_lmk_fast_run=/sys/module/lowmemorykiller/parameters/lmk_fast_run;
-if [ -e $parameter_lmk_fast_run ] && !grep "lmk_fast_run" "$activatedTweaks"; then
+if [ -e $parameter_lmk_fast_run ]; then
 chmod 0666 $parameter_lmk_fast_run;
 echo "$fastRun" > $parameter_lmk_fast_run;
 echo "$date lmk_fast_run=$fastRun" >> $LOG;
@@ -2135,7 +2121,7 @@ echo "$date fudge_swap=$fudgeSwap" >> $LOG;
 fi;
 
 parameter_minfree=/sys/module/lowmemorykiller/parameters/minfree;
-if [ -e $parameter_minfree ] && !grep "minfree" "$activatedTweaks"; then
+if [ -e $parameter_minfree ]; then
 chmod 0666 $parameter_minfree;
 echo "$minFree" > $parameter_minfree;
 echo "$date minfree=$minFree" >> $LOG;
@@ -2159,9 +2145,8 @@ echo "$date Gaming RAM manager profile for $((memTotal))mb devices successfully 
 }
 
 ramManagerMultitasking() {
-activatedTweaks="/data/data/com.paget96.lspeedandroid/shared_prefs/act_scripts.xml";
 
-memTotal=$(free -m |awk '/^Mem:/{print $2}');
+memTotal=$(free -m | awk '/^Mem:/{print $2}');
 
 fa=$(((memTotal*2/100)*1024/4));
 va=$(((memTotal*3/100)*1024/4));
@@ -2237,7 +2222,7 @@ echo "$date oom_reaper=$oomReaper" >> $LOG;
 fi;
 
 parameter_lmk_fast_run=/sys/module/lowmemorykiller/parameters/lmk_fast_run;
-if [ -e $parameter_lmk_fast_run ] && !grep "lmk_fast_run" "$activatedTweaks"; then
+if [ -e $parameter_lmk_fast_run ]; then
 chmod 0666 $parameter_lmk_fast_run;
 echo "$fastRun" > $parameter_lmk_fast_run;
 echo "$date lmk_fast_run=$fastRun" >> $LOG;
@@ -2259,7 +2244,7 @@ echo "$date fudge_swap=$fudgeSwap" >> $LOG;
 fi;
 
 parameter_minfree=/sys/module/lowmemorykiller/parameters/minfree;
-if [ -e $parameter_minfree ] && !grep "minfree" "$activatedTweaks"; then
+if [ -e $parameter_minfree ]; then
 chmod 0666 $parameter_minfree;
 echo "$minFree" > $parameter_minfree;
 echo "$date minfree=$minFree" >> $LOG;
@@ -2780,88 +2765,418 @@ fi;
 echo "$date Performance virtual memory tweaks activated" >> $LOG;
 }
 
+#
+# Profile presets
+#
+setDefaultProfile() {
+	write $USER_PROFILE/battery_improvements "1"
+		
+	# CPU section
+	write $USER_PROFILE/cpu_optimization "2"
+	write $USER_PROFILE/gov_tuner "2"
+
+	# Entropy section
+	write $USER_PROFILE/entropy "0"
+
+	# GPU section
+	write $USER_PROFILE/gpu_optimizer "2"
+	write $USER_PROFILE/optimize_buffers "0"
+	write $USER_PROFILE/render_opengles_using_gpu "0"
+	write $USER_PROFILE/use_opengl_skia "0"
+
+	# I/O tweaks section
+	write $USER_PROFILE/disable_io_stats "1"
+	write $USER_PROFILE/io_blocks_optimization "2"
+	write $USER_PROFILE/io_extended_queue "0"
+	write $USER_PROFILE/partition_remount "0"
+	write $USER_PROFILE/scheduler_tuner "1"
+	write $USER_PROFILE/sd_tweak "0"
+
+	# LNET tweaks section
+	write $USER_PROFILE/dns "0"
+	write $USER_PROFILE/net_buffers "0"
+	write $USER_PROFILE/net_speed_plus "0"
+	write $USER_PROFILE/net_tcp "1"
+	write $USER_PROFILE/optimize_ril "1"
+
+	# Other
+	write $USER_PROFILE/disable_debugging "1"
+	write $USER_PROFILE/disable_kernel_panic "1"
+
+	# RAM manager section
+	write $USER_PROFILE/ram_manager "2"
+	write $USER_PROFILE/disable_multitasking_limitations "0"
+	write $USER_PROFILE/low_ram_flag "0"
+	write $USER_PROFILE/oom_killer "0"
+	write $USER_PROFILE/swappiness "1"
+	write $USER_PROFILE/virtual_memory "2"
+	write $USER_PROFILE/heap_optimization "1"
+	write $USER_PROFILE/zram_optimization "0"
+}
+ 
+setPowerSavingProfile() {
+	write $USER_PROFILE/battery_improvements "1"
+		
+	# CPU section
+	write $USER_PROFILE/cpu_optimization "1"
+	write $USER_PROFILE/gov_tuner "1"
+
+	# Entropy section
+	write $USER_PROFILE/entropy "0"
+
+	# GPU section
+	write $USER_PROFILE/gpu_optimizer "1"
+	write $USER_PROFILE/optimize_buffers "0"
+	write $USER_PROFILE/render_opengles_using_gpu "0"
+	write $USER_PROFILE/use_opengl_skia "0"
+
+	# I/O tweaks section
+	write $USER_PROFILE/disable_io_stats "1"
+	write $USER_PROFILE/io_blocks_optimization "1"
+	write $USER_PROFILE/io_extended_queue "0"
+	write $USER_PROFILE/partition_remount "0"
+	write $USER_PROFILE/scheduler_tuner "1"
+	write $USER_PROFILE/sd_tweak "0"
+
+	# LNET tweaks section
+	write $USER_PROFILE/dns "0"
+	write $USER_PROFILE/net_buffers "0"
+	write $USER_PROFILE/net_speed_plus "0"
+	write $USER_PROFILE/net_tcp "1"
+	write $USER_PROFILE/optimize_ril "1"
+
+	# Other
+	write $USER_PROFILE/disable_debugging "1"
+	write $USER_PROFILE/disable_kernel_panic "1"
+
+	# RAM manager section
+	write $USER_PROFILE/ram_manager "2"
+	write $USER_PROFILE/disable_multitasking_limitations "0"
+	write $USER_PROFILE/low_ram_flag "0"
+	write $USER_PROFILE/oom_killer "0"
+	write $USER_PROFILE/swappiness "1"
+	write $USER_PROFILE/virtual_memory "1"
+	write $USER_PROFILE/heap_optimization "1"
+	write $USER_PROFILE/zram_optimization "0"
+}
+
+setBalancedProfile() {
+	write $USER_PROFILE/battery_improvements "1"
+		
+	# CPU section
+	write $USER_PROFILE/cpu_optimization "2"
+	write $USER_PROFILE/gov_tuner "2"
+
+	# Entropy section
+	write $USER_PROFILE/entropy "0"
+
+	# GPU section
+	write $USER_PROFILE/gpu_optimizer "2"
+	write $USER_PROFILE/optimize_buffers "0"
+	write $USER_PROFILE/render_opengles_using_gpu "0"
+	write $USER_PROFILE/use_opengl_skia "0"
+
+	# I/O tweaks section
+	write $USER_PROFILE/disable_io_stats "1"
+	write $USER_PROFILE/io_blocks_optimization "2"
+	write $USER_PROFILE/io_extended_queue "0"
+	write $USER_PROFILE/partition_remount "0"
+	write $USER_PROFILE/scheduler_tuner "1"
+	write $USER_PROFILE/sd_tweak "0"
+
+	# LNET tweaks section
+	write $USER_PROFILE/dns "0"
+	write $USER_PROFILE/net_buffers "0"
+	write $USER_PROFILE/net_speed_plus "0"
+	write $USER_PROFILE/net_tcp "1"
+	write $USER_PROFILE/optimize_ril "1"
+
+	# Other
+	write $USER_PROFILE/disable_debugging "1"
+	write $USER_PROFILE/disable_kernel_panic "1"
+
+	# RAM manager section
+	write $USER_PROFILE/ram_manager "2"
+	write $USER_PROFILE/disable_multitasking_limitations "1"
+	write $USER_PROFILE/low_ram_flag "0"
+	write $USER_PROFILE/oom_killer "0"
+	write $USER_PROFILE/swappiness "2"
+	write $USER_PROFILE/virtual_memory "2"
+	write $USER_PROFILE/heap_optimization "1"
+	write $USER_PROFILE/zram_optimization "0"
+}
+
+setPerformanceProfile() {
+	write $USER_PROFILE/battery_improvements "1"
+		
+	# CPU section
+	write $USER_PROFILE/cpu_optimization "3"
+	write $USER_PROFILE/gov_tuner "3"
+
+	# Entropy section
+	write $USER_PROFILE/entropy "2"
+
+	# GPU section
+	write $USER_PROFILE/gpu_optimizer "3"
+	write $USER_PROFILE/optimize_buffers "0"
+	write $USER_PROFILE/render_opengles_using_gpu "0"
+	write $USER_PROFILE/use_opengl_skia "0"
+
+	# I/O tweaks section
+	write $USER_PROFILE/disable_io_stats "1"
+	write $USER_PROFILE/io_blocks_optimization "3"
+	write $USER_PROFILE/io_extended_queue "1"
+	write $USER_PROFILE/partition_remount "0"
+	write $USER_PROFILE/scheduler_tuner "1"
+	write $USER_PROFILE/sd_tweak "0"
+
+	# LNET tweaks section
+	write $USER_PROFILE/dns "0"
+	write $USER_PROFILE/net_buffers "0"
+	write $USER_PROFILE/net_speed_plus "1"
+	write $USER_PROFILE/net_tcp "1"
+	write $USER_PROFILE/optimize_ril "1"
+
+	# Other
+	write $USER_PROFILE/disable_debugging "1"
+	write $USER_PROFILE/disable_kernel_panic "1"
+
+	# RAM manager section
+	write $USER_PROFILE/ram_manager "3"
+	write $USER_PROFILE/disable_multitasking_limitations "1"
+	write $USER_PROFILE/low_ram_flag "0"
+	write $USER_PROFILE/oom_killer "0"
+	write $USER_PROFILE/swappiness "1"
+	write $USER_PROFILE/virtual_memory "3"
+	write $USER_PROFILE/heap_optimization "1"
+	write $USER_PROFILE/zram_optimization "0"
+}
+	
 sendToLog "$date Starting L Speed";
 
-# Default preset
-#userProfile=$(cat $USER_PROFILE);
-#if [ -e $USER_PROFILE ] && [ "$userProfile" != "0" ]; then
-	# set up user defined profile
-	#currentProfile=$(cat $PROFILE);
-	#sendToLog "$date Setting up user profile";
-#else 
+# Read current profile
+currentProfile=$(cat $PROFILE 2> /dev/null);
 
-if [ "$currentProfile" -eq 0 ]  || [ ! -e $PROFILE ]; then
-# use default
-sendToLog "$date Applying default profile";
-batteryImprovements;
-cpuOptimizationBalanced;
-gpuOptimizerBalanced;
-disableIoStats;
-ioBlocksOptimizationBalanced;
-netTcpTweaks;
-rilTweaks;
-disableDebugging;
-kernelPanicDisabled;
-swappinessTendency10;
-ramManagerBalanced;
-virtualMemoryTweaksBalanced;
+if [ "$currentProfile" == "-1" ]; then
+	profile="user defined";
+	
+elif [ "$currentProfile" == "0" ]; then
+	profile="default";
+	setDefaultProfile;
+	
+elif [ "$currentProfile" == "1" ]; then
+	profile="power saving";
+	setPowerSavingProfile;
 
-sendToLog "$date Successfully applied default profile";
+elif [ "$currentProfile" == "2" ]; then
+	profile="balanced";
+	setBalancedProfile;
+	
+elif [ "$currentProfile" == "3" ]; then
+	profile="performance";
+	setPerformanceProfile;
+else
+	profile="default";
+	setDefaultProfile;
+fi
 
-elif [ "$currentProfile" -eq 1 ]; then
-#use power saving
-sendToLog "$date Applying power saving profile";
-batteryImprovements;
-cpuOptimizationBattery;
-gpuOptimizerPowerSaving;
-disableIoStats;
-ioBlocksOptimizationPowerSaving;
-netTcpTweaks;
-rilTweaks;
-disableDebugging;
-kernelPanicDisabled;
-swappinessTendency25;
-ramManagerBalanced;
-virtualMemoryTweaksBattery;
 
-sendToLog "$date Successfully applied power saving profile";
+# Wait for boot completed
+attempts=10
+while [ "$attempts" -gt 0 ] && [ "$(getprop sys.boot_completed)" != "1" ]; do
+   attempts=$((attempts-1));
+   sendToLog "$date Waiting for boot_completed";
+   sleep 10
+done
 
-elif [ "$currentProfile" -eq 2 ]; then
-# use balanced
-sendToLog "$date Applying balanced profile";
-batteryImprovements;
-cpuOptimizationBalanced;
-gpuOptimizerBalanced;
-disableIoStats;
-ioBlocksOptimizationBalanced;
-netTcpTweaks;
-rilTweaks;
-disableDebugging;
-kernelPanicDisabled;
-swappinessTendency25;
-ramManagerBalanced;
-virtualMemoryTweaksBalanced;
+sendToLog "$date Applying $profile profile";
 
-sendToLog "$date Successfully applied balanced profile";
+if [ `cat $USER_PROFILE/battery_improvements` -eq 1 ]; then
+	batteryImprovements;
+fi
 
-elif [ "$currentProfile" -eq 3 ]; then
-# use performance
-sendToLog "$date Applying performance profile";
-batteryImprovements;
-cpuOptimizationPerformance;
-gpuOptimizerPerformance;
-disableIoStats;
-ioBlocksOptimizationPerformance;
-netTcpTweaks;
-rilTweaks;
-disableDebugging;
-kernelPanicDisabled;
-ramManagerGaming;
-swappinessTendency1;
-virtualMemoryTweaksPerformance;
+#
+# CPU tuner section
+#
+if [ `cat $USER_PROFILE/cpu_optimization` -eq 1 ]; then
+	cpuOptimizationBattery;
+elif [ `cat $USER_PROFILE/cpu_optimization` -eq 2 ]; then
+	cpuOptimizationBalanced;
+elif [ `cat $USER_PROFILE/cpu_optimization` -eq 3 ]; then
+	cpuOptimizationPerformance;
+fi
 
-sendToLog "$date Successfully applied performance profile";
+#if [ `cat $USER_PROFILE/gov_tuner` -eq 1 ]; then
+	# soon;
+#elif [ `cat $USER_PROFILE/gov_tuner` -eq 2 ]; then
+#	# soon;
+#elif [ `cat $USER_PROFILE/gov_tuner` -eq 3 ]; then
+#	# soon;
+#fi
+	
+#
+# Entropy section
+#
+if [ `cat $USER_PROFILE/entropy` -eq 1 ]; then
+	entropyLight;
+elif [ `cat $USER_PROFILE/entropy` -eq 2 ]; then
+	entropyEnlarger;
+elif [ `cat $USER_PROFILE/entropy` -eq 3 ]; then
+	entropyModerate;
+elif [ `cat $USER_PROFILE/entropy` -eq 4 ]; then
+	entropyAggressive;
+fi
 
-fi;
+#
+# GPU section
+#
+if [ `cat $USER_PROFILE/gpu_optimizer` -eq 1 ]; then
+	gpuOptimizerPowerSaving;
+elif [ `cat $USER_PROFILE/gpu_optimizer` -eq 2 ]; then
+	gpuOptimizerBalanced;
+elif [ `cat $USER_PROFILE/gpu_optimizer` -eq 3 ]; then
+	gpuOptimizerPerformance;
+fi
+	
+if [ `cat $USER_PROFILE/optimize_buffers` -eq 1 ]; then
+	optimizeBuffers;
+fi
+
+if [ `cat $USER_PROFILE/render_opengles_using_gpu` -eq 1 ]; then
+	renderOpenglesUsingGpu;
+fi
+
+if [ `cat $USER_PROFILE/use_opengl_skia` -eq 1 ]; then
+	useOpenglSkia;
+fi
+
+#
+# I/O tweaks section
+#
+if [ `cat $USER_PROFILE/disable_io_stats` -eq 1 ]; then
+	disableIoStats;
+fi
+
+if [ `cat $USER_PROFILE/io_blocks_optimization` -eq 1 ]; then
+	ioBlocksOptimizationPowerSaving;
+elif [ `cat $USER_PROFILE/io_blocks_optimization` -eq 2 ]; then
+	ioBlocksOptimizationBalanced;
+elif [ `cat $USER_PROFILE/io_blocks_optimization` -eq 3 ]; then
+	ioBlocksOptimizationPerformance;
+fi
+
+if [ `cat $USER_PROFILE/io_extended_queue` -eq 1 ]; then
+	ioExtendedQueue;
+fi
+
+if [ `cat $USER_PROFILE/partition_remount` -eq 1 ]; then
+	partitionRemount;
+fi
+
+#if [ `cat $USER_PROFILE/scheduler_tuner` -eq 1 ]; then
+#	partitionRemount;
+#fi
+
+#if [ `cat $USER_PROFILE/sd_tweak` -eq 1 ]; then
+#	partitionRemount;
+#fi
+
+#	
+# LNET tweaks section
+#
+if [ `cat $USER_PROFILE/dns` -eq 1 ]; then
+	dnsOptimizationGooglePublic;
+elif [ `cat $USER_PROFILE/dns` -eq 2 ]; then
+	dnsOptimizationzCloudFlare;
+fi
+
+if [ `cat $USER_PROFILE/net_buffers` -eq 1 ]; then
+	netBuffersSmall;
+elif [ `cat $USER_PROFILE/net_buffers` -eq 2 ]; then
+	netBuffersBig;
+fi
+
+if [ `cat $USER_PROFILE/net_speed_plus` -eq 1 ]; then
+	netSpeedPlus;
+fi
+
+if [ `cat $USER_PROFILE/net_tcp` -eq 1 ]; then
+	netTcpTweaks;
+fi
+
+if [ `cat $USER_PROFILE/optimize_ril` -eq 1 ]; then
+	rilTweaks;
+fi
+
+#	
+# Other
+#
+if [ `cat $USER_PROFILE/disable_debugging` -eq 1 ]; then
+	disableDebugging;
+fi
+
+if [ `cat $USER_PROFILE/disable_kernel_panic` -eq 1 ]; then
+	disableKernelPanic;
+fi
+
+#	
+# RAM manager section
+#
+if [ `$USER_PROFILE/ram_manager` -eq 1 ]; then
+	ramManagerMultitasking;
+elif [ `cat $USER_PROFILE/ram_manager` -eq 2 ]; then
+	ramManagerBalanced;
+elif [ `cat $USER_PROFILE/ram_manager` -eq 3 ]; then
+	ramManagerGaming;
+fi
+
+if [ `cat $USER_PROFILE/disable_multitasking_limitations` -eq 1 ]; then
+	disableMultitaskingLimitations;
+fi
+
+if [ `cat $USER_PROFILE/low_ram_flag` -eq 0 ]; then
+	lowRamFlagDisabled;
+elif [ `cat $USER_PROFILE/low_ram_flag` -eq 1 ]; then
+	lowRamFlagEnabled;
+fi
+
+if [ `cat $USER_PROFILE/oom_killer` -eq 0 ]; then
+	oomKillerDisabled;
+elif [ `cat $USER_PROFILE/oom_killer` -eq 1 ]; then
+	oomKillerEnabled;
+fi
+
+if [ `cat $USER_PROFILE/swappiness` -eq 1 ]; then
+	swappinessTendency1;
+elif [ `cat $USER_PROFILE/swappiness` -eq 2 ]; then
+	swappinessTendency10;
+elif [ `cat $USER_PROFILE/swappiness` -eq 3 ]; then
+	swappinessTendency25;
+elif [ `cat $USER_PROFILE/swappiness` -eq 4 ]; then
+	swappinessTendency50;
+elif [ `cat $USER_PROFILE/swappiness` -eq 5 ]; then
+	swappinessTendency75;
+elif [ `cat $USER_PROFILE/swappiness` -eq 6 ]; then
+	swappinessTendency100;
+fi
+
+if [ `cat $USER_PROFILE/virtual_memory` -eq 1 ]; then
+	virtualMemoryTweaksBattery;
+elif [ `cat $USER_PROFILE/virtual_memory` -eq 2 ]; then
+	virtualMemoryTweaksBalanced;
+elif [ `cat $USER_PROFILE/virtual_memory` -eq 3 ]; then
+	virtualMemoryTweaksPerformance;
+fi
+
+#if [ `cat $USER_PROFILE/heap_optimization` -eq 1 ]; then
+#	disableMultitaskingLimitations;
+#fi
+
+#if [ `cat $USER_PROFILE/zram_optimization` -eq 1 ]; then
+#	disableMultitaskingLimitations;
+#fi
+
+sendToLog "$date Successfully applied $profile profile";
+
 
 exit 0
