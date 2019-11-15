@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # L Speed tweak
 # Codename : lspeed
-version="v1.0-beta2";
+version="v1.0-beta4";
 date=15-11-2019;
 # Developer : Paget96
 # Paypal : https://paypal.me/Paget96
@@ -200,7 +200,7 @@ fi;
 setprop ro.audio.flinger_standbytime_ms 300
 sendToLog "$date Set low audio flinger standby delay to 300ms for reducing power consumption";
 
-for i in ls -d /sys/class/scsi_disk/*; do
+for i in /sys/class/scsi_disk/*; do
 write /sys/class/scsi_disk/"$i"/cache_type "temporary none"
 sendToLog "$date Set cache type to temporary none in $i";
 done
