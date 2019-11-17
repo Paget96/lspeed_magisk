@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # L Speed tweak
 # Codename : lspeed
-version="v1.0-beta5";
+version="v1.0-beta6";
 date=15-11-2019;
 # Developer : Paget96
 # Paypal : https://paypal.me/Paget96
@@ -51,7 +51,7 @@ createFile() {
 sendToLog() {
     echo "$1" | tee -a $LOG
 }
-	
+
 write() {
 	chmod 0644 "$1" 2> /dev/null
     echo -n "$2" > "$1" 2> /dev/null
@@ -71,11 +71,14 @@ fi;
 
 # Remove old logs when running the script again
 # and create dir if not exists
-if [ -d $LOG_DIR ]; then
-	rm -rf $LOG_DIR
-	mkdir -p $LOG_DIR
-else
-	mkdir -p $LOG_DIR
+# This will be only executed if there are no arguments while executing
+if [ $# -eq 0 ]; then
+	if [ -d $LOG_DIR ]; then
+		rm -rf $LOG_DIR
+		mkdir -p $LOG_DIR
+	else
+		mkdir -p $LOG_DIR
+	fi;
 fi;
 
 # Create setup dir and child files and dirs
@@ -103,13 +106,13 @@ fi;
 
 if [ -d $USER_PROFILE ]; then
 	createFile $USER_PROFILE/battery_improvements
-	
+
 	# CPU section
 	createFile $USER_PROFILE/cpu_optimization
 	createFile $USER_PROFILE/gov_tuner
-	
+
 	createFile $USER_PROFILE/entropy
-	
+
 	# GPU section
 	createFile $USER_PROFILE/gpu_optimizer
 	createFile $USER_PROFILE/optimize_buffers
@@ -130,11 +133,11 @@ if [ -d $USER_PROFILE ]; then
 	createFile $USER_PROFILE/net_speed_plus
 	createFile $USER_PROFILE/net_tcp
 	createFile $USER_PROFILE/optimize_ril
-	
+
 	# Other
 	createFile $USER_PROFILE/disable_debugging
 	createFile $USER_PROFILE/disable_kernel_panic
-	
+
 	# RAM manager section
 	createFile $USER_PROFILE/ram_manager
 	createFile $USER_PROFILE/disable_multitasking_limitations
@@ -204,7 +207,7 @@ for i in $(ls -d /sys/class/scsi_disk/*); do
 write /sys/class/scsi_disk/"$i"/cache_type "temporary none"
 sendToLog "$date Set cache type to temporary none in $i";
 done
- 
+
 if [ -e /sys/module/wakeup/parameters/enable_bluetooth_timer ]; then
 write /sys/module/wakeup/parameters/enable_bluetooth_timer "Y"
 write /sys/module/wakeup/parameters/enable_ipa_ws "N"
@@ -928,7 +931,7 @@ elif [ -d "/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
 elif [ -d "/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
 	gpu="/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
 elif [ -d "/sys/devices/platform/*.gpu/devfreq/*.gpu" ]; then
-	gpu="/sys/devices/platform/*.gpu/devfreq/*.gpu"	
+	gpu="/sys/devices/platform/*.gpu/devfreq/*.gpu"
 elif [ -d "/sys/devices/platform/gpusysfs" ]; then
 	gpu="/sys/devices/platform/gpusysfs"
 elif [ -d "/sys/devices/*.mali" ]; then
@@ -1015,7 +1018,7 @@ fi;
 echo "$date GPU is optimized..." >> $LOG;
 }
 
-gpuOprimizerPerformance() {
+gpuOptimizerPerformance() {
 echo "$date Optimizing GPU..." >> $LOG;
 
 # GPU related tweaks
@@ -1237,6 +1240,18 @@ echo "$date Changing app rendering to skiagl..." >> $LOG;
 setprop debug.hwui.renderer skiagl
 
 echo "$date Rendering chaned to skiagl" >> $LOG;
+}
+
+enableIoStats() {
+echo "$date Disabling I/O Stats..." >> $LOG;
+
+for i in $(find /sys -name iostats);
+do
+echo "1" > "$i";
+echo "$date iostats=1 in $i" >> $LOG;
+done
+
+echo "$date I/O Stats disabled" >> $LOG;
 }
 
 disableIoStats() {
@@ -2770,7 +2785,7 @@ echo "$date Performance virtual memory tweaks activated" >> $LOG;
 #
 setDefaultProfile() {
 	write $USER_PROFILE/battery_improvements "1"
-		
+
 	# CPU section
 	write $USER_PROFILE/cpu_optimization "2"
 	write $USER_PROFILE/gov_tuner "2"
@@ -2813,10 +2828,10 @@ setDefaultProfile() {
 	write $USER_PROFILE/heap_optimization "1"
 	write $USER_PROFILE/zram_optimization "0"
 }
- 
+
 setPowerSavingProfile() {
 	write $USER_PROFILE/battery_improvements "1"
-		
+
 	# CPU section
 	write $USER_PROFILE/cpu_optimization "1"
 	write $USER_PROFILE/gov_tuner "1"
@@ -2862,7 +2877,7 @@ setPowerSavingProfile() {
 
 setBalancedProfile() {
 	write $USER_PROFILE/battery_improvements "1"
-		
+
 	# CPU section
 	write $USER_PROFILE/cpu_optimization "2"
 	write $USER_PROFILE/gov_tuner "2"
@@ -2908,7 +2923,7 @@ setBalancedProfile() {
 
 setPerformanceProfile() {
 	write $USER_PROFILE/battery_improvements "1"
-		
+
 	# CPU section
 	write $USER_PROFILE/cpu_optimization "3"
 	write $USER_PROFILE/gov_tuner "3"
@@ -2952,6 +2967,9 @@ setPerformanceProfile() {
 	write $USER_PROFILE/zram_optimization "0"
 }
 
+if [ $# -eq 1 ]; then
+ $1;
+	else
 sendToLog "$date Starting L Speed";
 
 # Read current profile
@@ -2959,11 +2977,11 @@ currentProfile=$(cat $PROFILE 2> /dev/null);
 
 if [ "$currentProfile" == "-1" ]; then
 	profile="user defined";
-	
+
 elif [ "$currentProfile" == "0" ]; then
 	profile="default";
 	setDefaultProfile;
-	
+
 elif [ "$currentProfile" == "1" ]; then
 	profile="power saving";
 	setPowerSavingProfile;
@@ -2971,7 +2989,7 @@ elif [ "$currentProfile" == "1" ]; then
 elif [ "$currentProfile" == "2" ]; then
 	profile="balanced";
 	setBalancedProfile;
-	
+
 elif [ "$currentProfile" == "3" ]; then
 	profile="performance";
 	setPerformanceProfile;
@@ -3013,7 +3031,7 @@ fi
 #elif [ `cat $USER_PROFILE/gov_tuner` -eq 3 ]; then
 #	# soon;
 #fi
-	
+
 #
 # Entropy section
 #
@@ -3037,7 +3055,7 @@ elif [ `cat $USER_PROFILE/gpu_optimizer` -eq 2 ]; then
 elif [ `cat $USER_PROFILE/gpu_optimizer` -eq 3 ]; then
 	gpuOptimizerPerformance;
 fi
-	
+
 if [ `cat $USER_PROFILE/optimize_buffers` -eq 1 ]; then
 	optimizeBuffers;
 fi
@@ -3053,7 +3071,9 @@ fi
 #
 # I/O tweaks section
 #
-if [ `cat $USER_PROFILE/disable_io_stats` -eq 1 ]; then
+if [ `cat $USER_PROFILE/disable_io_stats` -eq 0 ]; then
+	enableIoStats;
+elif [ `cat $USER_PROFILE/disable_io_stats` -eq 1 ]; then
 	disableIoStats;
 fi
 
@@ -3081,7 +3101,7 @@ fi
 #	partitionRemount;
 #fi
 
-#	
+#
 # LNET tweaks section
 #
 if [ `cat $USER_PROFILE/dns` -eq 1 ]; then
@@ -3108,7 +3128,7 @@ if [ `cat $USER_PROFILE/optimize_ril` -eq 1 ]; then
 	rilTweaks;
 fi
 
-#	
+#
 # Other
 #
 if [ `cat $USER_PROFILE/disable_debugging` -eq 1 ]; then
@@ -3119,7 +3139,7 @@ if [ `cat $USER_PROFILE/disable_kernel_panic` -eq 1 ]; then
 	disableKernelPanic;
 fi
 
-#	
+#
 # RAM manager section
 #
 if [ `$USER_PROFILE/ram_manager` -eq 1 ]; then
@@ -3177,5 +3197,6 @@ fi
 #fi
 
 sendToLog "$date Successfully applied $profile profile";
+fi
 
 exit 0
