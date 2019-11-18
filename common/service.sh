@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # L Speed tweak
 # Codename : lspeed
-version="v1.0-beta7";
+version="v1.0-beta9";
 date=15-11-2019;
 # Developer : Paget96
 # Paypal : https://paypal.me/Paget96
@@ -22,6 +22,7 @@ date=15-11-2019;
 
 # Variables
 date="[$(date +"%H:%M:%S %d-%m-%Y")]";
+memTotal=$(free -m | awk '/^Mem:/{print $2}');
 
 #PATHS
 LSPEED=/data/lspeed
@@ -2282,76 +2283,47 @@ fi;
 echo "$date Multitasking RAM manager profile for $((memTotal))mb devices successfully applied" >> $LOG;
 }
 
-swappinessTendency1() {
-echo "$date Setting swappiness tendency..." >> $LOG;
+swappinessTendency() {
+	sendToLog "$date Setting swappiness tendency...";
 
-swappiness=/proc/sys/vm/swappiness
-if [ -e $swappiness ]; then
-echo "1" > $swappiness
-echo "$date swappiness=1" >> $LOG;
-fi;
+	swappiness=/proc/sys/vm/swappiness
+	if [ -e $swappiness ]; then
+		if [ "$1" == "1" ]; then
+			write $swappiness "1"
+			
+			sendToLog "$date swappiness=1";
+			sendToLog "$date Swappiness tendency set to 1";
+		elif [ "$1" == "2" ]; then
+			write $swappiness "10"
+			
+			sendToLog "$date swappiness=10";
+			sendToLog "$date Swappiness tendency set to 10";
+			
+		elif [ "$1" == "3" ]; then
+			write $swappiness "25"
+			
+			sendToLog "$date swappiness=25";
+			sendToLog "$date Swappiness tendency set to 25";
+			
+		elif [ "$1" == "4" ]; then
+			write $swappiness "50"
+			
+			sendToLog "$date swappiness=50";
+			sendToLog "$date Swappiness tendency set to 50";
 
-echo "$date Swappiness tendency set to 1" >> $LOG;
-}
+		elif [ "$1" == "5" ]; then
+			write $swappiness "75"
+			
+			sendToLog "$date swappiness=75";
+			sendToLog "$date Swappiness tendency set to 75";
 
-swappinessTendency10() {
-echo "$date Setting swappiness tendency..." >> $LOG;
-
-swappiness=/proc/sys/vm/swappiness
-if [ -e $swappiness ]; then
-echo "10" > $swappiness
-echo "$date swappiness=10" >> $LOG;
-fi;
-
-echo "$date Swappiness tendency set to 10" >> $LOG;
-}
-
-swappinessTendency25() {
-echo "$date Setting swappiness tendency..." >> $LOG;
-
-swappiness=/proc/sys/vm/swappiness
-if [ -e $swappiness ]; then
-echo "25" > $swappiness
-echo "$date swappiness=25" >> $LOG;
-fi;
-
-echo "$date Swappiness tendency set to 25" >> $LOG;
-}
-
-swappinessTendency50() {
-echo "$date Setting swappiness tendency..." >> $LOG;
-
-swappiness=/proc/sys/vm/swappiness
-if [ -e $swappiness ]; then
-echo "50" > $swappiness
-echo "$date swappiness=50" >> $LOG;
-fi;
-
-echo "$date Swappiness tendency set to 50" >> $LOG;
-}
-
-swappinessTendency75() {
-echo "$date Setting swappiness tendency..." >> $LOG;
-
-swappiness=/proc/sys/vm/swappiness
-if [ -e $swappiness ]; then
-echo "75" > $swappiness
-echo "$date swappiness=75" >> $LOG;
-fi;
-
-echo "$date Swappiness tendency set to 75" >> $LOG;
-}
-
-swappinessTendency100() {
-echo "$date Setting swappiness tendency..." >> $LOG;
-
-swappiness=/proc/sys/vm/swappiness
-if [ -e $swappiness ]; then
-echo "100" > $swappiness
-echo "$date swappiness=100" >> $LOG;
-fi;
-
-echo "$date Swappiness tendency set to 100" >> $LOG;
+		elif [ "$1" == "6" ]; then
+			write $swappiness "100"
+			
+			sendToLog "$date swappiness=100";
+			sendToLog "$date Swappiness tendency set to 100";			
+		fi
+	fi;
 }
 
 virtualMemoryTweaksBalanced() {
@@ -2780,6 +2752,32 @@ fi;
 echo "$date Performance virtual memory tweaks activated" >> $LOG;
 }
 
+zramOptimization() {
+diskSize=$((memTotal*1024*1024/3))
+
+if [ "$1" == "1" ]; then 
+	sendToLog "$date Activating zRam optimization";
+
+	if [ -e /dev/block/zram0 ]; then
+		swapoff /dev/block/zram0
+		write /sys/block/zram0/reset "1"
+		write /sys/block/zram0/disksize "$diskSize"
+		mkswap /dev/block/zram0
+		swapon /dev/block/zram0
+		sendToLog "$date zRam diskSize=$diskSize";
+		sendToLog "$date zRam optimization activated";
+	fi
+elif [ "$1" == "0" ]; then
+	sendToLog "$date Disabling zRam optimization";
+
+	if [ -e /dev/block/zram0 ]; then
+		swapoff /dev/block/zram0
+		sendToLog "$date zRam optimization disabled";
+	fi
+fi
+}
+
+
 #
 # Profile presets
 #
@@ -2967,6 +2965,7 @@ setPerformanceProfile() {
 	write $USER_PROFILE/zram_optimization "0"
 }
 
+# Check number of arguments and perform task based on it.
 if [ $# -eq 1 ]; then
  $1;
 	else
@@ -3192,9 +3191,11 @@ fi
 #	disableMultitaskingLimitations;
 #fi
 
-#if [ `cat $USER_PROFILE/zram_optimization` -eq 1 ]; then
-#	disableMultitaskingLimitations;
-#fi
+if [ `cat $USER_PROFILE/zram_optimization` -eq 0 ]; then
+	zramOptimization 0;
+elif [ `cat $USER_PROFILE/zram_optimization` -eq 1 ]; then
+	zramOptimization 1;
+fi
 
 sendToLog "$date Successfully applied $profile profile";
 fi
