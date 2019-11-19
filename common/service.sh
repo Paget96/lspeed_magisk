@@ -1,8 +1,8 @@
 #!/system/bin/sh
 # L Speed tweak
 # Codename : lspeed
-version="v1.0-beta9";
-date=15-11-2019;
+version="v1.0-RC1";
+date=19-11-2019;
 # Developer : Paget96
 # Paypal : https://paypal.me/Paget96
 
@@ -204,7 +204,7 @@ fi;
 setprop ro.audio.flinger_standbytime_ms 300
 sendToLog "$date Set low audio flinger standby delay to 300ms for reducing power consumption";
 
-for i in $(ls -d /sys/class/scsi_disk/*); do
+for i in /sys/class/scsi_disk/*); do
 write /sys/class/scsi_disk/"$i"/cache_type "temporary none"
 sendToLog "$date Set cache type to temporary none in $i";
 done
@@ -2758,22 +2758,35 @@ diskSize=$((memTotal*1024*1024/3))
 if [ "$1" == "1" ]; then 
 	sendToLog "$date Activating zRam optimization";
 
-	if [ -e /dev/block/zram0 ]; then
-		swapoff /dev/block/zram0
-		write /sys/block/zram0/reset "1"
-		write /sys/block/zram0/disksize "$diskSize"
-		mkswap /dev/block/zram0
-		swapon /dev/block/zram0
-		sendToLog "$date zRam diskSize=$diskSize";
-		sendToLog "$date zRam optimization activated";
-	fi
+	for i in /dev/block/zram* | grep -Eo '[0-9]+$'; do
+		if [ -e /dev/block/zram"$i" ]; then
+			write /sys/class/zram-control/hot_remove "$i"
+			write /sys/block/zram"$i"/reset "1"
+			swapoff /dev/block/zram"$i"
+			sendToLog "$date Disabling /dev/block/zram"$i"";
+		fi
+	done
+
+	sendToLog "$date Creating new zram0";
+
+	write /sys/block/zram0/disksize "$diskSize"
+	mkswap /dev/block/zram0
+	swapon /dev/block/zram0
+	sendToLog "$date zRam diskSize=$((diskSize/1024/1024))mb";
+	sendToLog "$date zRam optimization activated";
+		
 elif [ "$1" == "0" ]; then
 	sendToLog "$date Disabling zRam optimization";
 
-	if [ -e /dev/block/zram0 ]; then
-		swapoff /dev/block/zram0
-		sendToLog "$date zRam optimization disabled";
-	fi
+	for i in /dev/block/zram* | grep -Eo '[0-9]+$'; do
+		if [ -e /dev/block/zram"$i" ]; then
+			write /sys/class/zram-control/hot_remove "$i"
+			write /sys/block/zram"$i"/reset "1"
+			swapoff /dev/block/zram"$i"
+			sendToLog "$date Disabling /dev/block/zram"$i"";
+		fi
+	done
+	sendToLog "$date zRam optimization disabled";
 fi
 }
 
@@ -2966,8 +2979,10 @@ setPerformanceProfile() {
 }
 
 # Check number of arguments and perform task based on it.
-if [ $# -eq 1 ]; then
- $1;
+if [ $# -eq 2 ]; then
+	$1 $2;
+elif [ $# -eq 1 ]; then
+	$1
 	else
 sendToLog "$date Starting L Speed";
 
