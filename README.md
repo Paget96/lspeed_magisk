@@ -3,7 +3,10 @@
 
 <div align="center">
  New repository, this one wont be updated  anymore, thanks!
+ 
 https://github.com/Magisk-Modules-Repo/lspeed
+
+
 </div>
 <div align="center">
   <!-- Version -->
