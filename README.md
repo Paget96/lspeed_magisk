@@ -1,5 +1,10 @@
 ﻿<h1 align="center">L Speed magisk</h1>
 
+
+<div align="center">
+ New repository, this one wont be updated  anymore, thanks!
+https://github.com/Magisk-Modules-Repo/lspeed
+</div>
 <div align="center">
   <!-- Version -->
     <img src="https://img.shields.io/badge/Version-v1.0-blue.svg?longCache=true&style=popout-square"
