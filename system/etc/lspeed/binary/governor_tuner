@@ -1,0 +1,374 @@
+#!/system/bin/sh
+# This is a part of L Speed
+# Governor tuner
+
+########
+#PATHS #
+########
+# Path where logs and setup is stored (/data)
+LSPEED_DATA_DIR=/data/lspeed
+LOG_DIR=$LSPEED_DATA_DIR/log
+LOG=$LOG_DIR/main_log.log
+
+SETUP_DIR=$LSPEED_DATA_DIR/setup
+USER_PROFILE=$SETUP_DIR/user_profile
+
+# governor_tuner config files
+GOVERNOR_TUNER_DATA_DIR=$SETUP_DIR/governor_tuner
+INTERVAL=$GOVERNOR_TUNER_DATA_DIR/interval
+
+# cpu_detect output files
+CPU_DETECT_DATA_DIR=$SETUP_DIR/cpu_detect
+MIN_MAX_FREQ=$CPU_DETECT_DATA_DIR/min_max_freq
+MIN_FREQ_LIST=$CPU_DETECT_DATA_DIR/min_freq_list
+MAX_FREQ_LIST=$CPU_DETECT_DATA_DIR/max_freq_list
+LOGICAL_CORE=$CPU_DETECT_DATA_DIR/logical_core
+UNIQUE_FREQ=$CPU_DETECT_DATA_DIR/unique_freq
+CORE_GETTER=$CPU_DETECT_DATA_DIR/core_getter
+
+# Path in /system dir
+LSPEED=/system/etc/lspeed
+
+# Binaries
+GOVERNOR_TUNER_DIR=$LSPEED/governor_tuner
+BUSYBOX=$LSPEED/binary/busybox
+CPU_DETECT=$LSPEED/binary/cpu_detect
+
+# Governor tuner presets
+GOVERNOR_TUNER_PRESETS=$GOVERNOR_TUNER_DIR/governor_tuner_presets
+
+divider="==============================================="
+
+# Functions
+createFile() {
+    touch "$1"
+    chmod 0666 "$1"
+}
+
+sendToLog() {
+timeZone=$(getprop persist.sys.timezone)
+printDate=$(TZ="$timeZone" $BUSYBOX date +"%H:%M:%S:%3N %d-%m-%Y")
+
+echo "[$printDate] $1" >> $LOG
+}
+
+write() {
+	#chmod 0644 "$1"
+    echo "$2" > "$1"
+}
+
+lockFile() {
+	chmod 0644 "$1"
+    echo "$2" > "$1"
+	chmod 0444 "$1"
+}
+
+# Create governor_tuner dir if not exists
+if [ ! -d $GOVERNOR_TUNER_DATA_DIR ]; then
+	mkdir -p $GOVERNOR_TUNER_DATA_DIR
+fi;
+
+# Wait for main process to finish, we don't want logs overlaping
+waitMainProcess() {
+	if [ -s $LSPEED_DATA_DIR/main_function_PID ]; then
+		proc1=$($BUSYBOX cat $LSPEED_DATA_DIR/main_function_PID)
+		proc2=$(ps | $BUSYBOX grep "$proc1" | $BUSYBOX head -n 1 | $BUSYBOX tr -s ' ' | $BUSYBOX cut -d ' ' -f2)
+		
+		while [ "$proc1" -eq "$proc2" ]; do
+			
+			proc2=$(ps | $BUSYBOX grep "$proc1" | $BUSYBOX head -n 1 | $BUSYBOX tr -s ' ' | $BUSYBOX cut -d ' ' -f2)
+			
+			if	[ "$proc1" -eq "$proc2" ]; then
+				sendToLog "$divider"
+				sendToLog "governor_tuner waiting for main_function($proc1) to finish the job"
+				sendToLog "$divider"
+				sleep 5;
+			else
+				sendToLog "$divider"
+				sendToLog "main_function doesn't have a running process, governor_tuner proceeding..."
+				sendToLog "$divider"
+				sleep 2;
+			fi
+		done
+	fi
+	
+	unset proc1; unset proc2;
+}
+waitMainProcess
+
+# End governor_tuner process if already started.
+endProc() {
+	if [ -s $GOVERNOR_TUNER_DATA_DIR/governor_tuner_PID ]; then
+		proc1=$($BUSYBOX cat $GOVERNOR_TUNER_DATA_DIR/governor_tuner_PID)
+		proc2=$(ps | $BUSYBOX grep "$proc1" | $BUSYBOX head -n 1 | $BUSYBOX tr -s ' ' | $BUSYBOX cut -d ' ' -f2)
+		if [ "$proc1" -eq "$proc2" ]; then
+			kill "$proc1"
+			sendToLog "$divider"
+			sendToLog "Killing previous governor_tuner process($proc1)"
+			sendToLog "$divider"
+		fi
+	fi
+	
+	unset proc1; unset proc2;
+}
+endProc
+
+real_cpu_cores=$($BUSYBOX ls /sys/devices/system/cpu | $BUSYBOX grep -c ^cpu[0-9]);
+cpu_cores=$((real_cpu_cores-1));
+
+
+# Starting cpu_detect
+sh $CPU_DETECT
+
+applyParameters() {
+
+if [ "$#" -gt 0 ]; then
+	coreGetterListSize=$($BUSYBOX cat $CORE_GETTER | $BUSYBOX tr '\n' ' ' | $BUSYBOX wc -w)
+
+	sendToLog "Applying $1 profile"
+	sendToLog "Governor tuner found $coreGetterListSize main CPU cores"
+
+	if [ "$coreGetterListSize" -eq 3 ]; then
+		
+		#
+		# PRIME Cluster
+		#
+		getCore=$($BUSYBOX cat $CORE_GETTER | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $1}')
+		getCurrentGovernor=$($BUSYBOX cat /sys/devices/system/cpu/cpu"$getCore"/cpufreq/scaling_governor)
+		clusterGovernorPath="/sys/devices/system/cpu/cpu$getCore/cpufreq/$getCurrentGovernor"
+		regularGovernorPath="/sys/devices/system/cpu/cpufreq/$getCurrentGovernor"
+		
+		sendToLog "First one is PRIME located on cpu$getCore"
+		sendToLog "Current governor on PRIME: $getCurrentGovernor"
+		
+		if [ -e $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" ]; then
+			if [ -e "$clusterGovernorPath" ]; then
+				sendToLog "Changing governor parameters"
+				sh $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" "prime" "$clusterGovernorPath"
+				sendToLog "Governor parameters successfully changed"
+				
+			elif [ -e "$regularGovernorPath" ]; then
+				sendToLog "Changing governor parameters"
+				sh $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" "regular" "$regularGovernorPath"
+				sendToLog "Governor parameters successfully changed"
+				
+			else
+				sendToLog "Cannot find governor path"
+			fi
+			
+		else
+			sendToLog "Governor $getCurrentGovernor is not supported"
+		fi
+			
+		sendToLog "$divider"
+		unset getCore; unset getCurrentGovernor; unset clusterGovernorPath; unset regularGovernorPath;
+		
+		#
+		# BIG Cluster
+		#
+		getCore=$($BUSYBOX cat $CORE_GETTER | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $2}')
+		getCurrentGovernor=$($BUSYBOX cat /sys/devices/system/cpu/cpu"$getCore"/cpufreq/scaling_governor)
+		clusterGovernorPath="/sys/devices/system/cpu/cpu$getCore/cpufreq/$getCurrentGovernor"
+		regularGovernorPath="/sys/devices/system/cpu/cpufreq/$getCurrentGovernor"
+		
+		sendToLog "Second one is BIG located on cpu$getCore"
+		sendToLog "Current governor on BIG: $getCurrentGovernor"
+		
+		if [ -e $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" ]; then
+			if [ -e "$clusterGovernorPath" ]; then
+				sendToLog "Changing governor parameters"
+				sh $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" "big" "$clusterGovernorPath"
+				sendToLog "Governor parameters successfully changed"
+			
+			elif [ -e "$regularGovernorPath" ]; then
+				sendToLog "Changing governor parameters"
+				sh $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" "regular" "$regularGovernorPath"
+				sendToLog "Governor parameters successfully changed"
+			else
+				sendToLog "Cannot find governor path"
+			fi
+			
+		else
+			sendToLog "Governor $getCurrentGovernor is not supported"
+		fi
+		
+		sendToLog "$divider"
+		unset getCore; unset getCurrentGovernor; unset clusterGovernorPath; unset regularGovernorPath;
+		
+		#
+		# LITTLE Cluster
+		#
+		getCore=$($BUSYBOX cat $CORE_GETTER | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $3}')
+		getCurrentGovernor=$($BUSYBOX cat /sys/devices/system/cpu/cpu"$getCore"/cpufreq/scaling_governor)
+		clusterGovernorPath="/sys/devices/system/cpu/cpu$getCore/cpufreq/$getCurrentGovernor"
+		regularGovernorPath="/sys/devices/system/cpu/cpufreq/$getCurrentGovernor"
+		
+		sendToLog "Third one is LITTLE located on cpu$getCore"
+		sendToLog "Current governor on LITTLE: $getCurrentGovernor"
+		
+		if [ -e $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" ]; then
+			if [ -e "$clusterGovernorPath" ]; then
+				sendToLog "Changing governor parameters"
+				sh $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" "little" "$clusterGovernorPath"
+				sendToLog "Governor parameters successfully changed"
+				
+			elif [ -e "$regularGovernorPath" ]; then
+				sendToLog "Changing governor parameters"
+				sh $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" "regular" "$regularGovernorPath"
+				sendToLog "Governor parameters successfully changed"
+			else
+				sendToLog "Cannot find governor path"
+			fi
+			
+		else
+			sendToLog "Governor $getCurrentGovernor is not supported"
+		fi
+		
+		sendToLog "$divider"
+		unset getCore; unset getCurrentGovernor; unset clusterGovernorPath; unset regularGovernorPath;
+		
+	elif [ "$coreGetterListSize" -eq 2 ]; then
+
+		#
+		# BIG Cluster
+		#
+		getCore=$($BUSYBOX cat $CORE_GETTER | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $1}')
+		getCurrentGovernor=$($BUSYBOX cat /sys/devices/system/cpu/cpu"$getCore"/cpufreq/scaling_governor)
+		clusterGovernorPath="/sys/devices/system/cpu/cpu$getCore/cpufreq/$getCurrentGovernor"
+		regularGovernorPath="/sys/devices/system/cpu/cpufreq/$getCurrentGovernor"
+		
+		sendToLog "First one is BIG located on cpu$getCore"
+		sendToLog "Current governor on BIG: $getCurrentGovernor"
+		
+		if [ -e $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" ]; then
+			if [ -e "$clusterGovernorPath" ]; then
+				sendToLog "Changing governor parameters"
+				sh $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" "big" "$clusterGovernorPath"
+				sendToLog "Governor parameters successfully changed"
+				
+			elif [ -e "$regularGovernorPath" ]; then
+				sendToLog "Changing governor parameters"
+				sh $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" "regular" "$regularGovernorPath"
+				sendToLog "Governor parameters successfully changed"
+				
+			else
+				sendToLog "Cannot find governor path"
+			fi
+			
+		else
+			sendToLog "Governor $getCurrentGovernor is not supported"
+		fi
+		
+		sendToLog "$divider"
+		unset getCore; unset getCurrentGovernor; unset clusterGovernorPath; unset regularGovernorPath;
+		
+		#
+		# LITTLE Cluster
+		#
+		getCore=$($BUSYBOX cat $CORE_GETTER | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $2}')
+		getCurrentGovernor=$($BUSYBOX cat /sys/devices/system/cpu/cpu"$getCore"/cpufreq/scaling_governor)
+		clusterGovernorPath="/sys/devices/system/cpu/cpu$getCore/cpufreq/$getCurrentGovernor"
+		regularGovernorPath="/sys/devices/system/cpu/cpufreq/$getCurrentGovernor"
+		
+		sendToLog "Second one is LITTLE located on cpu$getCore"
+		sendToLog "Current governor on LITTLE: $getCurrentGovernor"
+		
+		if [ -e $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" ]; then
+			if [ -e "$clusterGovernorPath" ]; then
+				sendToLog "Changing governor parameters"
+				sh $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" "little" "$clusterGovernorPath"
+				sendToLog "Governor parameters successfully changed"
+				
+			elif [ -e "$regularGovernorPath" ]; then
+				sendToLog "Changing governor parameters"
+				sh $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" "regular" "$regularGovernorPath"
+				sendToLog "Governor parameters successfully changed"
+			else
+				sendToLog "Cannot find governor path"
+			fi
+			
+		else
+			sendToLog "Governor $getCurrentGovernor is not supported"
+		fi
+		
+		sendToLog "$divider"
+		unset getCore; unset getCurrentGovernor; unset clusterGovernorPath; unset regularGovernorPath;
+	else
+		#
+		# REGULAR CPU
+		#
+		getCurrentGovernor=$($BUSYBOX cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)
+		regularGovernorPath="/sys/devices/system/cpu/cpufreq/$getCurrentGovernor"
+		
+		sendToLog "REGULAR CPU located on cpu0"
+		sendToLog "Current governor on REGULAR: $getCurrentGovernor"
+		
+		if [ -e $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" ]; then
+			sendToLog "Changing governor parameters"
+			sh $GOVERNOR_TUNER_PRESETS/"$1"/"$getCurrentGovernor" "regular" "$regularGovernorPath"
+			sendToLog "Governor parameters successfully changed"
+		else
+			sendToLog "Governor $getCurrentGovernor is not supported"
+		fi
+		
+		sendToLog "$divider"
+		unset getCurrentGovernor; unset regularGovernorPath;
+	fi
+fi
+}
+
+while true; do
+
+	# Always wait for main_function process to finish
+	waitMainProcess
+	
+	# Get current governor tuner profile
+	getProfile=$($BUSYBOX cat $USER_PROFILE/governor_tuner) 2>/dev/null
+
+	if [ "$getProfile" -eq 1 ] || [ "$getProfile" -eq 2 ] || [ "$getProfile" -eq 3 ]; then
+		write $GOVERNOR_TUNER_DATA_DIR/governor_tuner_PID $$
+	elif [ "$getProfile" -eq 0 ]; then
+		sendToLog "Governor tuner is disabled, killing process."
+		exit 0
+	else
+		sendToLog "Cannot reteive current profile"
+		exit 0
+	fi
+
+	# Execute profiles for selected profile
+	if [ "$getProfile" -eq 1 ]; then
+		profile="battery";
+		
+	elif [ "$getProfile" -eq 2 ]; then
+		profile="balanced";
+		
+	elif [ "$getProfile" -eq 3 ]; then
+		profile="performance";
+		
+	else
+		profile=""
+	fi
+
+	applyParameters "$profile"
+
+	# This is a little part of the code which tells how often to run governor_tuner
+	# If $INTERVAL file doesn't exists it'll be executed every 5mins, otherwise it'll get
+	# the interval inside, if it's 0 governor_tuner will be one shoot script, so executed just once
+	# If the value is above 0 that will set sleep to seconds, 1 means 1min. 10 means 10 mins and so on.
+	if [ -s $INTERVAL ]; then
+		exec_interval=$($BUSYBOX cat $INTERVAL)
+	   
+		if [ "$exec_interval" -eq 0 ]; then
+			exit 0
+		else
+			sendToLog "governor_tuner will be executed in $((exec_interval))mins"
+			sendToLog "$divider"
+			sleep $((exec_interval*60));
+		fi
+	else
+		sendToLog "governor_tuner will be executed in 5mins"
+		sendToLog "$divider"
+		sleep 300;
+	fi
+
+done

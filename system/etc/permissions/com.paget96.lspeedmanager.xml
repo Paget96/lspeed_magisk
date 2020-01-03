@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-
-<permissions>
-    <privapp-permissions package="com.paget96.lspeedmanager">
-		<permission name="android.permission.ACCESS_SUPERUSER" />
-		<permission name="android.permission.INTERNET" />
-    </privapp-permissions>
-</permissions>
