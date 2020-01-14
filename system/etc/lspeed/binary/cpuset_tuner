@@ -24,6 +24,8 @@ CPU_DETECT_DATA_DIR=$SETUP_DIR/cpu_detect
 CPU_CORE_COUNT=$CPU_DETECT_DATA_DIR/cpu_core_count
 REAL_CPU_CORE_COUNT=$CPU_DETECT_DATA_DIR/real_cpu_core_count
 CORE_GETTER=$CPU_DETECT_DATA_DIR/core_getter
+BIG_CORES_COUNT=$CPU_DETECT_DATA_DIR/big_cores_count
+LITTLE_CORES_COUNT=$CPU_DETECT_DATA_DIR/little_cores_count
 
 sendToLog() {
 timeZone=$(getprop persist.sys.timezone)
@@ -64,8 +66,17 @@ if [ "$core_getter_list_size" -eq 3 ]; then
 		if [ $littleCoresCount -eq 2 ] && [ $bigCoresCount -eq 4 ] && [ $primeCoresCount -eq 4 ]; then
 			foreground="0-4"
 			topApp="0-5"
-			background="0"
+			background="0-1"
 			systemBackround="0-1"
+			
+			validConfig=true
+			
+		# 0-3 4-5 6-7
+		elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 2 ] && [ $primeCoresCount -eq 2 ]; then
+			foreground="0-4"
+			topApp="0-5"
+			background="0-2"
+			systemBackround="0-3"
 			
 			validConfig=true
 			
@@ -73,8 +84,8 @@ if [ "$core_getter_list_size" -eq 3 ]; then
 		elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 3 ] && [ $primeCoresCount -eq 1 ]; then
 			foreground="0-3"
 			topApp="0-4"
-			background="0"
-			systemBackround="0-2"
+			background="0-2"
+			systemBackround="0-3"
 			
 			validConfig=true
 		else
@@ -87,8 +98,17 @@ if [ "$core_getter_list_size" -eq 3 ]; then
 		if [ $littleCoresCount -eq 2 ] && [ $bigCoresCount -eq 4 ] && [ $primeCoresCount -eq 4 ]; then
 			foreground="0-4"
 			topApp="0-5"
-			background="0"
+			background="0-1"
 			systemBackround="0-1"
+			
+			validConfig=true
+			
+		# 0-3 4-5 6-7
+		elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 2 ] && [ $primeCoresCount -eq 2 ]; then
+			foreground="0-5"
+			topApp="0-6"
+			background="0-2"
+			systemBackround="0-3"
 			
 			validConfig=true
 			
@@ -96,8 +116,8 @@ if [ "$core_getter_list_size" -eq 3 ]; then
 		elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 3 ] && [ $primeCoresCount -eq 1 ]; then
 			foreground="0-5"
 			topApp="0-2,4-6"
-			background="0"
-			systemBackround="0-2"
+			background="0-2"
+			systemBackround="0-3"
 			
 			validConfig=true
 		else
@@ -110,8 +130,17 @@ if [ "$core_getter_list_size" -eq 3 ]; then
 		if [ $littleCoresCount -eq 2 ] && [ $bigCoresCount -eq 4 ] && [ $primeCoresCount -eq 4 ]; then
 			foreground="0-8"
 			topApp="0-9"
-			background="0"
+			background="0-1"
 			systemBackround="0-1"
+			
+			validConfig=true
+			
+		# 0-3 4-5 6-7
+		elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 2 ] && [ $primeCoresCount -eq 2 ]; then
+			foreground="0-6"
+			topApp="0-7"
+			background="0-2"
+			systemBackround="0-3"
 			
 			validConfig=true
 			
@@ -119,8 +148,8 @@ if [ "$core_getter_list_size" -eq 3 ]; then
 		elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 3 ] && [ $primeCoresCount -eq 1 ]; then
 			foreground="0-6"
 			topApp="0-7"
-			background="0"
-			systemBackround="0-2"
+			background="0-2"
+			systemBackround="0-3"
 			
 			validConfig=true
 		else
@@ -131,15 +160,12 @@ if [ "$core_getter_list_size" -eq 3 ]; then
 	fi
 	
 elif [ "$core_getter_list_size" -eq 2 ]; then
-	getBig=$($BUSYBOX cat $CORE_GETTER | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $1}')
-	getLittle=$($BUSYBOX cat $CORE_GETTER | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $2}')
-
 	# This shows real numbers, for usage we should use n-1
 	# e.g. CPU have 6 LITTLE(0-5) and 2 BIG (6-7)
-	littleCoresCount=$((getBig))
-	bigCoresCount=$((real_core_count-getBig));
+	littleCoresCount=$($BUSYBOX cat $LITTLE_CORES_COUNT);
+	bigCoresCount=$($BUSYBOX cat $BIG_CORES_COUNT);
 		
-	sendToLog "Setting up cpuset for $littleCoresCount(0-$((getBig-1))) LITTLE CPU cores and $bigCoresCount($getBig-$core_count) BIG CPU cores"
+	sendToLog "Setting up cpuset for $littleCoresCount LITTLE CPU cores and $bigCoresCount BIG CPU cores"
 
 	# Setting up cpuset based on profiles
 	if [ "$1" = "1" ]; then
@@ -147,7 +173,7 @@ elif [ "$core_getter_list_size" -eq 2 ]; then
 		if [ $littleCoresCount -eq 2 ] && [ $bigCoresCount -eq 2 ]; then
 			foreground="0-1"
 			topApp="0-2"
-			background="0"
+			background="0-1"
 			systemBackround="0-1"
 			
 			validConfig=true
@@ -156,8 +182,8 @@ elif [ "$core_getter_list_size" -eq 2 ]; then
 		elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 2 ]; then
 			foreground="0-2"
 			topApp="0-4"
-			background="0"
-			systemBackround="0-2"	
+			background="0-2"
+			systemBackround="0-3"	
 			
 			validConfig=true
 			
@@ -165,17 +191,17 @@ elif [ "$core_getter_list_size" -eq 2 ]; then
 		elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 4 ]; then
 			foreground="0-3"
 			topApp="0-5"
-			background="0"
-			systemBackround="0-2"
+			background="0-2"
+			systemBackround="0-3"
 			
 			validConfig=true
 			
 		# 0-5 6-7
 		elif [ $littleCoresCount -eq 6 ] && [ $bigCoresCount -eq 2 ]; then
-			foreground="0-4"
-			topApp="0-3,6"
-			background="0"
-			systemBackround="0-4"
+			foreground="0-5"
+			topApp="0-6"
+			background="0-2"
+			systemBackround="0-5"
 			
 			validConfig=true
 		else
@@ -188,7 +214,7 @@ elif [ "$core_getter_list_size" -eq 2 ]; then
 		if [ $littleCoresCount -eq 2 ] && [ $bigCoresCount -eq 2 ]; then
 			foreground="0-1"
 			topApp="0-3"
-			background="0"
+			background="0-1"
 			systemBackround="0-1"
 			
 			validConfig=true
@@ -197,8 +223,8 @@ elif [ "$core_getter_list_size" -eq 2 ]; then
 		elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 2 ]; then
 			foreground="0-3"
 			topApp="0-5"
-			background="0"
-			systemBackround="0-2"	
+			background="0-2"
+			systemBackround="0-3"	
 			
 			validConfig=true
 			
@@ -206,17 +232,17 @@ elif [ "$core_getter_list_size" -eq 2 ]; then
 		elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 4 ]; then
 			foreground="0-2,4-5"
 			topApp="0-6"
-			background="0"
-			systemBackround="0-2"
+			background="0-2"
+			systemBackround="0-3"
 			
 			validConfig=true
 			
 		# 0-5 6-7
 		elif [ $littleCoresCount -eq 6 ] && [ $bigCoresCount -eq 2 ]; then
-			foreground="0-3,7"
+			foreground="0-5"
 			topApp="0-6"
-			background="0"
-			systemBackround="0-4"
+			background="0-2"
+			systemBackround="0-5"
 			
 			validConfig=true
 		else
@@ -229,7 +255,7 @@ elif [ "$core_getter_list_size" -eq 2 ]; then
 		if [ $littleCoresCount -eq 2 ] && [ $bigCoresCount -eq 2 ]; then
 			foreground="0-2"
 			topApp="0-3"
-			background="0"
+			background="0-1"
 			systemBackround="0-1"
 			
 			validConfig=true
@@ -238,8 +264,8 @@ elif [ "$core_getter_list_size" -eq 2 ]; then
 		elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 2 ]; then
 			foreground="0-4"
 			topApp="0-5"
-			background="0"
-			systemBackround="0-2"
+			background="0-2"
+			systemBackround="0-3"
 
 			validConfig=true
 			
@@ -247,8 +273,8 @@ elif [ "$core_getter_list_size" -eq 2 ]; then
 		elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 4 ]; then
 			foreground="0-6"
 			topApp="0-7"
-			background="0"
-			systemBackround="0-2"
+			background="0-2"
+			systemBackround="0-3"
 			
 			validConfig=true
 			
@@ -256,8 +282,8 @@ elif [ "$core_getter_list_size" -eq 2 ]; then
 		elif [ $littleCoresCount -eq 6 ] && [ $bigCoresCount -eq 2 ]; then
 			foreground="0-6"
 			topApp="0-7"
-			background="0"
-			systemBackround="0-4"
+			background="0-2"
+			systemBackround="0-5"
 			
 			validConfig=true
 		else
@@ -276,27 +302,27 @@ else
 		# 0-3
 		if [ "$real_core_count" -eq 4 ]; then
 			foreground="0-1"
-			topApp="0-2"
-			background="0"
-			systemBackround="0-1"
+			topApp="0-3"
+			background="0-1"
+			systemBackround="0-2"
 			
 			validConfig=true
 			
 		# 0-5
 		elif [ "$real_core_count" -eq 6 ]; then
-			foreground="0-2"
-			topApp="0-3"
-			background="0"
-			systemBackround="0-2"
+			foreground="0-3"
+			topApp="0-4"
+			background="0-2"
+			systemBackround="0-3"
 			
 			validConfig=true
 			
 		# 0-7
 		elif [ "$real_core_count" -eq 8 ]; then
-			foreground="0-4"
-			topApp="0-5"
-			background="0"
-			systemBackround="0-2"
+			foreground="0-5"
+			topApp="0-6"
+			background="0-2"
+			systemBackround="0-4"
 			
 			validConfig=true
 			
@@ -304,8 +330,8 @@ else
 		elif [ "$real_core_count" -eq 10 ]; then
 			foreground="0-5"
 			topApp="0-6"
-			background="0"
-			systemBackround="0-2"
+			background="0-2"
+			systemBackround="0-4"
 			
 			validConfig=true
 		else
@@ -318,9 +344,9 @@ else
 		# 0-3
 		if [ "$real_core_count" -eq 4 ]; then
 			foreground="0-1"
-			topApp="0-3"
-			background="0"
-			systemBackround="0-1"
+			topApp="0-4"
+			background="0-1"
+			systemBackround="0-2"
 			
 			validConfig=true
 			
@@ -328,8 +354,8 @@ else
 		elif [ "$real_core_count" -eq 6 ]; then
 			foreground="0-3"
 			topApp="0-4"
-			background="0"
-			systemBackround="0-2"
+			background="0-2"
+			systemBackround="0-3"
 			
 			validConfig=true
 			
@@ -337,17 +363,17 @@ else
 		elif [ "$real_core_count" -eq 8 ]; then
 			foreground="0-5"
 			topApp="0-6"
-			background="0"
-			systemBackround="0-2"
+			background="0-2"
+			systemBackround="0-4"
 			
 			validConfig=true
 			
 		# 0-9
 		elif [ "$real_core_count" -eq 10 ]; then
-			foreground="0-6"
-			topApp="0-7"
-			background="0"
-			systemBackround="0-2"
+			foreground="0-7"
+			topApp="0-8"
+			background="0-2"
+			systemBackround="0-4"
 			
 			validConfig=true
 		else
@@ -361,7 +387,7 @@ else
 		if [ "$real_core_count" -eq 4 ]; then
 			foreground="0-2"
 			topApp="0-3"
-			background="0"
+			background="0-1"
 			systemBackround="0-2"
 			
 			validConfig=true
@@ -370,8 +396,8 @@ else
 		elif [ "$real_core_count" -eq 6 ]; then
 			foreground="0-4"
 			topApp="0-5"
-			background="0"
-			systemBackround="0-2"
+			background="0-2"
+			systemBackround="0-3"
 			
 			validConfig=true
 			
@@ -379,8 +405,8 @@ else
 		elif [ "$real_core_count" -eq 8 ]; then
 			foreground="0-6"
 			topApp="0-7"
-			background="0"
-			systemBackround="0-2"
+			background="0-2"
+			systemBackround="0-5"
 			
 			validConfig=true
 			
@@ -388,8 +414,8 @@ else
 		elif [ "$real_core_count" -eq 10 ]; then
 			foreground="0-8"
 			topApp="0-9"
-			background="0"
-			systemBackround="0-2"
+			background="0-2"
+			systemBackround="0-5"
 			
 			validConfig=true
 		else

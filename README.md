@@ -30,11 +30,9 @@
 ## Introduction
 L Speed is a modification that combines tweaks inside an intuitive module who aims to improve kernel with optimal parameter changes for the widest range of devices.
 It's goal is to improve overall performance, reduce significant lags, extend battery life and improve your experience on Android. Fully customizable module with prebuit manager.
-When we talk about the performances it'll improve your gaming experience (for example PUBG, Garena Free-fire, and bunch of others), otherside there is battery profile who aims to increase your Screen on time and idle time with minimal performance loss.
-If you are unsure, simple use the balance profile which is a perfect balance between those two.
 It's very simple to use, everything is well explained in the manager it self, every option have a info button beside it.
 The mod will and should work on any device that meets its minimum requirement.
-You only need a rooted Android device and proper installed busybox to function properly.
+You only need a rooted Android device with Magisk 19.x+ version..
 
 <div align="center">
 **Module with prebuilt manager**
@@ -86,6 +84,29 @@ You can pass them on any links from below (Telegram is recommended)
 If you want, you can support me over [Paypal donate](https://paypal.me/Paget96), to support my work.
 
 ## Changelog 
+**v1.6.3**
+- Improved UI flow
+- Updated cpusets
+- Updated cleaner
+- Updated disable debugging
+- App optimized and fixed issues
+
+**V1.6.2**
+- Fixed issues with freezing on some devices
+
+**v1.6.1**
+- Added junk and app cache cleaner
+- Updated cpusets 
+- Improved CPU detection for the devices with tweaked frequencies
+- Improved detection of inverted clusters
+- Added cpuset tweaks for 0-3 4-5 6-7 cpu configuration
+- Fixed problem on devices with incompatible commands
+- Removed ads from dialogs
+- Improved L button optimization
+- Slightly updated I/O optimization profiles
+- Updated aggressive doze
+- Code optimization and overall improvements
+
 **v1.6**
 - Updated magisk template (Starting with this version L Speed works just with Magisk 19.x+ versions)
 - Updated CFQ and BFQ scheduler parameters (Set CFQ and BFQ schedulers to gorup tasks this will slightly improve it's effectivness. It's better than threat every as separated IO queue Disable low_latency on both, so we can get a bit bigger r/w speeds)

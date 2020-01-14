@@ -1,9 +1,6 @@
 #!/system/bin/sh
 # Function to install a manager app
 installApk() {
-
-	echo "- Uninstalling old manager, if exists..."
-	pm uninstall com.paget96.lspeedmanager
 	
 	filelist=$(ls $1)
 

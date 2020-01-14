@@ -1,8 +1,8 @@
 #!/system/bin/sh
 # L Speed tweak
 # Codename : lspeed
-version="v1.6";
-build_date=1-1-2020;
+version="v1.6.3";
+build_date=14-1-2020;
 # Developer : Paget96
 # Paypal : https://paypal.me/Paget96
 
@@ -30,6 +30,7 @@ LOG=$LOG_DIR/main_log.log
 SETUP_DIR=$LSPEED_DATA_DIR/setup
 USER_PROFILE=$SETUP_DIR/user_profile
 PROFILE=$SETUP_DIR/profile
+IS_EXECUTED=$LSPEED_DATA_DIR/is_executed
 
 # Path for executables and busybox
 LSPEED=/system/etc/lspeed
@@ -282,9 +283,6 @@ sendToLog "Activating battery improvements...";
 		sendToLog "Fast charge enabled";
 	fi;
 
-	resetprop ro.audio.flinger_standbytime_ms 300
-	sendToLog "Set low audio flinger standby delay to 300ms for reducing power consumption";
-
 	scsi_disk=$($BUSYBOX ls -d /sys/class/scsi_disk/*) 2>/dev/null
 	for i in $scsi_disk; do
  		write "$i"/cache_type "temporary none"
@@ -327,12 +325,8 @@ sendToLog "Activating battery improvements...";
 	# lpm Levels
 	lpm=/sys/module/lpm_levels
 	if [ -d $lpm/parameters ]; then
-		write $lpm/enable_low_power/l2 "4"
 		write $lpm/parameters/lpm_prediction "Y"
-		write $lpm/parameters/menu_select "N"
-		write $lpm/parameters/print_parsed_dt "N"
-		write $lpm/parameters/sleep_disabled "N"
-		write $lpm/parameters/sleep_time_override "0"
+		write $lpm/parameters/sleep_disabled "0"
 		sendToLog "Low power mode sleep enabled";
 	fi;
 
@@ -851,865 +845,863 @@ governorTuner() {
 }
 
 entropyAggressive() {
-sendToLog "Activating aggressive entropy profile..."
+	sendToLog "Activating aggressive entropy profile..."
 
-$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=512
-$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=1024
-$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
+	$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=512
+	$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=1024
+	$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
 
-sendToLog "Aggressive entropy profile activated"
-sendToLog "$divider";
+	sendToLog "Aggressive entropy profile activated"
+	sendToLog "$divider";
 }
 
 entropyEnlarger() {
-sendToLog "Activating enlarger entropy profile..."
+	sendToLog "Activating enlarger entropy profile..."
 
-$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=128
-$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=896
-$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
+	$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=128
+	$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=896
+	$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
 
-sendToLog "Enlarger entropy profile activated"
-sendToLog "$divider";
+	sendToLog "Enlarger entropy profile activated"
+	sendToLog "$divider";
 }
 
 entropyLight() {
-sendToLog "Activating light entropy profile..."
+	sendToLog "Activating light entropy profile..."
 
-$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=64
-$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=128
-$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
+	$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=64
+	$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=128
+	$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
 
-sendToLog "Light entropy profile activated"
-sendToLog "$divider";
+	sendToLog "Light entropy profile activated"
+	sendToLog "$divider";
 }
 
 entropyModerate() {
-sendToLog "Activating moderate entropy profile..."
+	sendToLog "Activating moderate entropy profile..."
 
-$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=128
-$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=256
-$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
+	$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=128
+	$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=256
+	$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
 
-sendToLog "Moderate entropy profile activated"
-sendToLog "$divider";
+	sendToLog "Moderate entropy profile activated"
+	sendToLog "$divider";
 }
 
 gpuOptimizerBalanced() {
-sendToLog "Applying balanced GPU optimization...";
+	sendToLog "Applying balanced GPU optimization...";
 
-# GPU related tweaks
-if [ -d "/sys/class/kgsl/kgsl-3d0" ]; then
-	gpu="/sys/class/kgsl/kgsl-3d0"
-elif [ -d "/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0" ]; then
-	gpu="/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0"
-elif [ -d "/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
-	gpu="/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
-elif [ -d "/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
-	gpu="/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
-elif [ -d "/sys/devices/platform/*.gpu/devfreq/*.gpu" ]; then
-	gpu="/sys/devices/platform/*.gpu/devfreq/*.gpu"
-elif [ -d "/sys/devices/platform/gpusysfs" ]; then
-	gpu="/sys/devices/platform/gpusysfs"
-elif [ -d "/sys/devices/*.mali" ]; then
-	gpu="/sys/devices/*.mali"
-elif [ -d "/sys/devices/*.gpu" ]; then
-	gpu="/sys/devices/*.gpu"
-elif [ -d "/sys/devices/platform/mali.0" ]; then
-	gpu="/sys/devices/platform/mali.0"
-elif [ -d "/sys/devices/platform/mali-*.0" ]; then
-	gpu="/sys/devices/platform/mali-*.0"
-elif [ -d "/sys/module/mali/parameters" ]; then
-	gpu="/sys/module/mali/parameters"
-elif [ -d "/sys/class/misc/mali0" ]; then
-	gpu="/sys/class/misc/mali0"
-elif [ -d "/sys/kernel/gpu" ]; then
-	gpu="/sys/kernel/gpu"
-fi
+	# GPU related tweaks
+	if [ -d "/sys/class/kgsl/kgsl-3d0" ]; then
+		gpu="/sys/class/kgsl/kgsl-3d0"
+	elif [ -d "/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0" ]; then
+		gpu="/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0"
+	elif [ -d "/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
+		gpu="/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
+	elif [ -d "/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
+		gpu="/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
+	elif [ -d "/sys/devices/platform/*.gpu/devfreq/*.gpu" ]; then
+		gpu="/sys/devices/platform/*.gpu/devfreq/*.gpu"
+	elif [ -d "/sys/devices/platform/gpusysfs" ]; then
+		gpu="/sys/devices/platform/gpusysfs"
+	elif [ -d "/sys/devices/*.mali" ]; then
+		gpu="/sys/devices/*.mali"
+	elif [ -d "/sys/devices/*.gpu" ]; then
+		gpu="/sys/devices/*.gpu"
+	elif [ -d "/sys/devices/platform/mali.0" ]; then
+		gpu="/sys/devices/platform/mali.0"
+	elif [ -d "/sys/devices/platform/mali-*.0" ]; then
+		gpu="/sys/devices/platform/mali-*.0"
+	elif [ -d "/sys/module/mali/parameters" ]; then
+		gpu="/sys/module/mali/parameters"
+	elif [ -d "/sys/class/misc/mali0" ]; then
+		gpu="/sys/class/misc/mali0"
+	elif [ -d "/sys/kernel/gpu" ]; then
+		gpu="/sys/kernel/gpu"
+	fi
 
-if [ "$memTotal" -lt 3072 ]; then
-	resetprop ro.hwui.texture_cache_size $((memTotal*10/100/2));
-	resetprop ro.hwui.layer_cache_size $((memTotal*5/100/2));
-	resetprop ro.hwui.path_cache_size $((memTotal*2/100/2));
-	resetprop ro.hwui.r_buffer_cache_size $((memTotal/100/2));
-	resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100/2));
-	resetprop ro.hwui.texture_cache_flushrate 0.3
-else 
-	resetprop ro.hwui.texture_cache_size $((memTotal*10/100));
-	resetprop ro.hwui.layer_cache_size $((memTotal*5/100));
-	resetprop ro.hwui.path_cache_size $((memTotal*2/100));
-	resetprop ro.hwui.r_buffer_cache_size $((memTotal/100));
-	resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100));
-	resetprop ro.hwui.texture_cache_flushrate 0.3
-fi
-sendToLog "Optimized GPU caches";
+	if [ "$memTotal" -lt 3072 ]; then
+		resetprop ro.hwui.texture_cache_size $((memTotal*10/100/2));
+		resetprop ro.hwui.layer_cache_size $((memTotal*5/100/2));
+		resetprop ro.hwui.path_cache_size $((memTotal*2/100/2));
+		resetprop ro.hwui.r_buffer_cache_size $((memTotal/100/2));
+		resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100/2));
+		resetprop ro.hwui.texture_cache_flushrate 0.3
+	else 
+		resetprop ro.hwui.texture_cache_size $((memTotal*10/100));
+		resetprop ro.hwui.layer_cache_size $((memTotal*5/100));
+		resetprop ro.hwui.path_cache_size $((memTotal*2/100));
+		resetprop ro.hwui.r_buffer_cache_size $((memTotal/100));
+		resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100));
+		resetprop ro.hwui.texture_cache_flushrate 0.3
+	fi
+	sendToLog "Optimized GPU caches";
 
-if [ -e /proc/gpufreq/gpufreq_limited_thermal_ignore ]; then
-	write /proc/gpufreq/gpufreq_limited_thermal_ignore "1"		
-	sendToLog "Disabled gpufreq thermal"
-fi;
+	if [ -e /proc/gpufreq/gpufreq_limited_thermal_ignore ]; then
+		write /proc/gpufreq/gpufreq_limited_thermal_ignore "1"		
+		sendToLog "Disabled gpufreq thermal"
+	fi;
 
-if [ -e /proc/mali/dvfs_enable ]; then
-	write /proc/mali/dvfs_enable "1"		
-	sendToLog "dvfs enabled"
-fi;
+	if [ -e /proc/mali/dvfs_enable ]; then
+		write /proc/mali/dvfs_enable "1"		
+		sendToLog "dvfs enabled"
+	fi;
 
-if [ -e /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate ]; then
-	write /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate "1"		
-	sendToLog "Simple GPU algorithm enabled"
-fi;
+	if [ -e /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate ]; then
+		write /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate "1"		
+		sendToLog "Simple GPU algorithm enabled"
+	fi;
 
-# Adreno idler
-if [ -e /sys/module/adreno_idler/parameters/adreno_idler_active ]; then
-	write /sys/module/adreno_idler/parameters/adreno_idler_active "Y"
-	write /sys/module/adreno_idler/parameters/adreno_idler_idleworkload "6000"
-	write /sys/module/adreno_idler/parameters/adreno_idler_downdifferential "15"
-	write /sys/module/adreno_idler/parameters/adreno_idler_idlewait "15"
-	sendToLog "Disabled and tweaked adreno idler"
-fi;
+	# Adreno idler
+	if [ -e /sys/module/adreno_idler/parameters/adreno_idler_active ]; then
+		write /sys/module/adreno_idler/parameters/adreno_idler_active "Y"
+		write /sys/module/adreno_idler/parameters/adreno_idler_idleworkload "6000"
+		write /sys/module/adreno_idler/parameters/adreno_idler_downdifferential "15"
+		write /sys/module/adreno_idler/parameters/adreno_idler_idlewait "15"
+		sendToLog "Disabled and tweaked adreno idler"
+	fi;
 
-if [ -e $gpu/devfreq/adrenoboost ]; then
-	write $gpu/devfreq/adrenoboost "1"
-	sendToLog "Adreno boost is set to 1"
-fi;
+	if [ -e $gpu/devfreq/adrenoboost ]; then
+		write $gpu/devfreq/adrenoboost "1"
+		sendToLog "Adreno boost is set to 1"
+	fi;
 
-if [ -e $gpu/throttling ]; then
-	write $gpu/throttling "0"
-	sendToLog "GPU throttling disabled"
-fi;
+	if [ -e $gpu/throttling ]; then
+		write $gpu/throttling "0"
+		sendToLog "GPU throttling disabled"
+	fi;
 
-if [ -e $gpu/max_pwrlevel ]; then
-	write $gpu/max_pwrlevel "0"
-	sendToLog "GPU max power level disabled"
-fi;
+	if [ -e $gpu/max_pwrlevel ]; then
+		write $gpu/max_pwrlevel "0"
+		sendToLog "GPU max power level disabled"
+	fi;
 
-if [ -e $gpu/force_no_nap ]; then
-	write $gpu/force_no_nap "1"
-	sendToLog "force_no_nap enabled"
-fi;
+	if [ -e $gpu/force_no_nap ]; then
+		write $gpu/force_no_nap "1"
+		sendToLog "force_no_nap enabled"
+	fi;
 
-if [ -e $gpu/bus_split ]; then
-	write $gpu/bus_split "1"
-	sendToLog "bus_split enabled"
-fi;
+	if [ -e $gpu/bus_split ]; then
+		write $gpu/bus_split "1"
+		sendToLog "bus_split enabled"
+	fi;
 
-if [ -e $gpu/force_bus_on ]; then
-	write $gpu/force_bus_on "1"		
-	sendToLog "force_bus_on enabled"
-fi;
+	if [ -e $gpu/force_bus_on ]; then
+		write $gpu/force_bus_on "1"		
+		sendToLog "force_bus_on enabled"
+	fi;
 
-if [ -e $gpu/force_clk_on ]; then
-	write $gpu/force_clk_on "1"		
-	sendToLog "force_clk_on enabled"
-fi;
-	
-if [ -e $gpu/force_rail_on ]; then
-	write $gpu/force_rail_on "1"		
-	sendToLog "force_rail_on enabled"
-fi;
+	if [ -e $gpu/force_clk_on ]; then
+		write $gpu/force_clk_on "1"		
+		sendToLog "force_clk_on enabled"
+	fi;
+		
+	if [ -e $gpu/force_rail_on ]; then
+		write $gpu/force_rail_on "1"		
+		sendToLog "force_rail_on enabled"
+	fi;
 
-sendToLog "Balanced GPU optimization applied"
-sendToLog "$divider";
+	sendToLog "Balanced GPU optimization applied"
+	sendToLog "$divider";
 }
 
 gpuOptimizerPerformance() {
-sendToLog "Applying performance GPU optimization...";
+	sendToLog "Applying performance GPU optimization...";
 
-# GPU related tweaks
-if [ -d "/sys/class/kgsl/kgsl-3d0" ]; then
-	gpu="/sys/class/kgsl/kgsl-3d0"
-elif [ -d "/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0" ]; then
-	gpu="/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0"
-elif [ -d "/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
-	gpu="/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
-elif [ -d "/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
-	gpu="/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
-elif [ -d "/sys/devices/platform/*.gpu/devfreq/*.gpu" ]; then
-	gpu="/sys/devices/platform/*.gpu/devfreq/*.gpu"
-elif [ -d "/sys/devices/platform/gpusysfs" ]; then
-	gpu="/sys/devices/platform/gpusysfs"
-elif [ -d "/sys/devices/*.mali" ]; then
-	gpu="/sys/devices/*.mali"
-elif [ -d "/sys/devices/*.gpu" ]; then
-	gpu="/sys/devices/*.gpu"
-elif [ -d "/sys/devices/platform/mali.0" ]; then
-	gpu="/sys/devices/platform/mali.0"
-elif [ -d "/sys/devices/platform/mali-*.0" ]; then
-	gpu="/sys/devices/platform/mali-*.0"
-elif [ -d "/sys/module/mali/parameters" ]; then
-	gpu="/sys/module/mali/parameters"
-elif [ -d "/sys/class/misc/mali0" ]; then
-	gpu="/sys/class/misc/mali0"
-elif [ -d "/sys/kernel/gpu" ]; then
-	gpu="/sys/kernel/gpu"
-fi
+	# GPU related tweaks
+	if [ -d "/sys/class/kgsl/kgsl-3d0" ]; then
+		gpu="/sys/class/kgsl/kgsl-3d0"
+	elif [ -d "/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0" ]; then
+		gpu="/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0"
+	elif [ -d "/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
+		gpu="/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
+	elif [ -d "/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
+		gpu="/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
+	elif [ -d "/sys/devices/platform/*.gpu/devfreq/*.gpu" ]; then
+		gpu="/sys/devices/platform/*.gpu/devfreq/*.gpu"
+	elif [ -d "/sys/devices/platform/gpusysfs" ]; then
+		gpu="/sys/devices/platform/gpusysfs"
+	elif [ -d "/sys/devices/*.mali" ]; then
+		gpu="/sys/devices/*.mali"
+	elif [ -d "/sys/devices/*.gpu" ]; then
+		gpu="/sys/devices/*.gpu"
+	elif [ -d "/sys/devices/platform/mali.0" ]; then
+		gpu="/sys/devices/platform/mali.0"
+	elif [ -d "/sys/devices/platform/mali-*.0" ]; then
+		gpu="/sys/devices/platform/mali-*.0"
+	elif [ -d "/sys/module/mali/parameters" ]; then
+		gpu="/sys/module/mali/parameters"
+	elif [ -d "/sys/class/misc/mali0" ]; then
+		gpu="/sys/class/misc/mali0"
+	elif [ -d "/sys/kernel/gpu" ]; then
+		gpu="/sys/kernel/gpu"
+	fi
 
-if [ "$memTotal" -lt 3072 ]; then
-	resetprop ro.hwui.texture_cache_size $((memTotal*10/100/2));
-	resetprop ro.hwui.layer_cache_size $((memTotal*5/100/2));
-	resetprop ro.hwui.path_cache_size $((memTotal*2/100/2));
-	resetprop ro.hwui.r_buffer_cache_size $((memTotal/100/2));
-	resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100/2));
-	resetprop ro.hwui.texture_cache_flushrate 0.3
-else 
-	resetprop ro.hwui.texture_cache_size $((memTotal*10/100));
-	resetprop ro.hwui.layer_cache_size $((memTotal*5/100));
-	resetprop ro.hwui.path_cache_size $((memTotal*2/100));
-	resetprop ro.hwui.r_buffer_cache_size $((memTotal/100));
-	resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100));
-	resetprop ro.hwui.texture_cache_flushrate 0.3
-fi
-sendToLog "Optimized GPU caches";
+	if [ "$memTotal" -lt 3072 ]; then
+		resetprop ro.hwui.texture_cache_size $((memTotal*10/100/2));
+		resetprop ro.hwui.layer_cache_size $((memTotal*5/100/2));
+		resetprop ro.hwui.path_cache_size $((memTotal*2/100/2));
+		resetprop ro.hwui.r_buffer_cache_size $((memTotal/100/2));
+		resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100/2));
+		resetprop ro.hwui.texture_cache_flushrate 0.3
+	else 
+		resetprop ro.hwui.texture_cache_size $((memTotal*10/100));
+		resetprop ro.hwui.layer_cache_size $((memTotal*5/100));
+		resetprop ro.hwui.path_cache_size $((memTotal*2/100));
+		resetprop ro.hwui.r_buffer_cache_size $((memTotal/100));
+		resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100));
+		resetprop ro.hwui.texture_cache_flushrate 0.3
+	fi
+	sendToLog "Optimized GPU caches";
 
-if [ -e /proc/gpufreq/gpufreq_limited_thermal_ignore ]; then
-	write /proc/gpufreq/gpufreq_limited_thermal_ignore "1"		
-	sendToLog "Disabled gpufreq thermal"
-fi;
+	if [ -e /proc/gpufreq/gpufreq_limited_thermal_ignore ]; then
+		write /proc/gpufreq/gpufreq_limited_thermal_ignore "1"		
+		sendToLog "Disabled gpufreq thermal"
+	fi;
 
-if [ -e /proc/mali/dvfs_enable ]; then
-	write /proc/mali/dvfs_enable "1"		
-	sendToLog "dvfs enabled"
-fi;
+	if [ -e /proc/mali/dvfs_enable ]; then
+		write /proc/mali/dvfs_enable "1"		
+		sendToLog "dvfs enabled"
+	fi;
 
-if [ -e /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate ]; then
-	write /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate "1"		
-	sendToLog "Simple GPU algorithm enabled"
-fi;
+	if [ -e /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate ]; then
+		write /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate "1"		
+		sendToLog "Simple GPU algorithm enabled"
+	fi;
 
-# Adreno idler
-if [ -e /sys/module/adreno_idler/parameters/adreno_idler_active ]; then
-	write /sys/module/adreno_idler/parameters/adreno_idler_active "N"
-	write /sys/module/adreno_idler/parameters/adreno_idler_idleworkload "6000"
-	write /sys/module/adreno_idler/parameters/adreno_idler_downdifferential "15"
-	write /sys/module/adreno_idler/parameters/adreno_idler_idlewait "15"
-	sendToLog "Disabled and tweaked adreno idler"
-fi;
+	# Adreno idler
+	if [ -e /sys/module/adreno_idler/parameters/adreno_idler_active ]; then
+		write /sys/module/adreno_idler/parameters/adreno_idler_active "N"
+		write /sys/module/adreno_idler/parameters/adreno_idler_idleworkload "6000"
+		write /sys/module/adreno_idler/parameters/adreno_idler_downdifferential "15"
+		write /sys/module/adreno_idler/parameters/adreno_idler_idlewait "15"
+		sendToLog "Disabled and tweaked adreno idler"
+	fi;
 
-if [ -e $gpu/devfreq/adrenoboost ]; then
-	write $gpu/devfreq/adrenoboost "2"
-	sendToLog "Adreno boost is set to 2"
-fi;
+	if [ -e $gpu/devfreq/adrenoboost ]; then
+		write $gpu/devfreq/adrenoboost "2"
+		sendToLog "Adreno boost is set to 2"
+	fi;
 
-if [ -e $gpu/throttling ]; then
-	write $gpu/throttling "0"
-	sendToLog "GPU throttling disabled"
-fi;
+	if [ -e $gpu/throttling ]; then
+		write $gpu/throttling "0"
+		sendToLog "GPU throttling disabled"
+	fi;
 
-if [ -e $gpu/max_pwrlevel ]; then
-	write $gpu/max_pwrlevel "0"
-	sendToLog "GPU max power level disabled"
-fi;
+	if [ -e $gpu/max_pwrlevel ]; then
+		write $gpu/max_pwrlevel "0"
+		sendToLog "GPU max power level disabled"
+	fi;
 
-if [ -e $gpu/force_no_nap ]; then
-	write $gpu/force_no_nap "1"
-	sendToLog "force_no_nap enabled"
-fi;
+	if [ -e $gpu/force_no_nap ]; then
+		write $gpu/force_no_nap "1"
+		sendToLog "force_no_nap enabled"
+	fi;
 
-if [ -e $gpu/bus_split ]; then
-	write $gpu/bus_split "0"
-	sendToLog "bus_split disabled"
-fi;
+	if [ -e $gpu/bus_split ]; then
+		write $gpu/bus_split "0"
+		sendToLog "bus_split disabled"
+	fi;
 
-if [ -e $gpu/force_bus_on ]; then
-	write $gpu/force_bus_on "1"		
-	sendToLog "force_bus_on enabled"
-fi;
+	if [ -e $gpu/force_bus_on ]; then
+		write $gpu/force_bus_on "1"		
+		sendToLog "force_bus_on enabled"
+	fi;
 
-if [ -e $gpu/force_clk_on ]; then
-	write $gpu/force_clk_on "1"		
-	sendToLog "force_clk_on enabled"
-fi;
-	
-if [ -e $gpu/force_rail_on ]; then
-	write $gpu/force_rail_on "1"		
-	sendToLog "force_rail_on enabled"
-fi;
+	if [ -e $gpu/force_clk_on ]; then
+		write $gpu/force_clk_on "1"		
+		sendToLog "force_clk_on enabled"
+	fi;
+		
+	if [ -e $gpu/force_rail_on ]; then
+		write $gpu/force_rail_on "1"		
+		sendToLog "force_rail_on enabled"
+	fi;
 
-sendToLog "Performance GPU optimization applied"
-sendToLog "$divider";
+	sendToLog "Performance GPU optimization applied"
+	sendToLog "$divider";
 }
 
 gpuOptimizerPowerSaving() {
-sendToLog "Applying power saving GPU optimization...";
+	sendToLog "Applying power saving GPU optimization...";
 
-# GPU related tweaks
-if [ -d "/sys/class/kgsl/kgsl-3d0" ]; then
-	gpu="/sys/class/kgsl/kgsl-3d0"
-elif [ -d "/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0" ]; then
-	gpu="/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0"
-elif [ -d "/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
-	gpu="/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
-elif [ -d "/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
-	gpu="/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
-elif [ -d "/sys/devices/platform/*.gpu/devfreq/*.gpu" ]; then
-	gpu="/sys/devices/platform/*.gpu/devfreq/*.gpu"
-elif [ -d "/sys/devices/platform/gpusysfs" ]; then
-	gpu="/sys/devices/platform/gpusysfs"
-elif [ -d "/sys/devices/*.mali" ]; then
-	gpu="/sys/devices/*.mali"
-elif [ -d "/sys/devices/*.gpu" ]; then
-	gpu="/sys/devices/*.gpu"
-elif [ -d "/sys/devices/platform/mali.0" ]; then
-	gpu="/sys/devices/platform/mali.0"
-elif [ -d "/sys/devices/platform/mali-*.0" ]; then
-	gpu="/sys/devices/platform/mali-*.0"
-elif [ -d "/sys/module/mali/parameters" ]; then
-	gpu="/sys/module/mali/parameters"
-elif [ -d "/sys/class/misc/mali0" ]; then
-	gpu="/sys/class/misc/mali0"
-elif [ -d "/sys/kernel/gpu" ]; then
-	gpu="/sys/kernel/gpu"
-fi
+	# GPU related tweaks
+	if [ -d "/sys/class/kgsl/kgsl-3d0" ]; then
+		gpu="/sys/class/kgsl/kgsl-3d0"
+	elif [ -d "/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0" ]; then
+		gpu="/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0"
+	elif [ -d "/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
+		gpu="/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
+	elif [ -d "/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
+		gpu="/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
+	elif [ -d "/sys/devices/platform/*.gpu/devfreq/*.gpu" ]; then
+		gpu="/sys/devices/platform/*.gpu/devfreq/*.gpu"
+	elif [ -d "/sys/devices/platform/gpusysfs" ]; then
+		gpu="/sys/devices/platform/gpusysfs"
+	elif [ -d "/sys/devices/*.mali" ]; then
+		gpu="/sys/devices/*.mali"
+	elif [ -d "/sys/devices/*.gpu" ]; then
+		gpu="/sys/devices/*.gpu"
+	elif [ -d "/sys/devices/platform/mali.0" ]; then
+		gpu="/sys/devices/platform/mali.0"
+	elif [ -d "/sys/devices/platform/mali-*.0" ]; then
+		gpu="/sys/devices/platform/mali-*.0"
+	elif [ -d "/sys/module/mali/parameters" ]; then
+		gpu="/sys/module/mali/parameters"
+	elif [ -d "/sys/class/misc/mali0" ]; then
+		gpu="/sys/class/misc/mali0"
+	elif [ -d "/sys/kernel/gpu" ]; then
+		gpu="/sys/kernel/gpu"
+	fi
 
-if [ "$memTotal" -lt 3072 ]; then
-	resetprop ro.hwui.texture_cache_size $((memTotal*10/100/2));
-	resetprop ro.hwui.layer_cache_size $((memTotal*5/100/2));
-	resetprop ro.hwui.path_cache_size $((memTotal*2/100/2));
-	resetprop ro.hwui.r_buffer_cache_size $((memTotal/100/2));
-	resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100/2));
-	resetprop ro.hwui.texture_cache_flushrate 0.3
-else 
-	resetprop ro.hwui.texture_cache_size $((memTotal*10/100));
-	resetprop ro.hwui.layer_cache_size $((memTotal*5/100));
-	resetprop ro.hwui.path_cache_size $((memTotal*2/100));
-	resetprop ro.hwui.r_buffer_cache_size $((memTotal/100));
-	resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100));
-	resetprop ro.hwui.texture_cache_flushrate 0.3
-fi
-sendToLog "Optimized GPU caches";
+	if [ "$memTotal" -lt 3072 ]; then
+		resetprop ro.hwui.texture_cache_size $((memTotal*10/100/2));
+		resetprop ro.hwui.layer_cache_size $((memTotal*5/100/2));
+		resetprop ro.hwui.path_cache_size $((memTotal*2/100/2));
+		resetprop ro.hwui.r_buffer_cache_size $((memTotal/100/2));
+		resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100/2));
+		resetprop ro.hwui.texture_cache_flushrate 0.3
+	else 
+		resetprop ro.hwui.texture_cache_size $((memTotal*10/100));
+		resetprop ro.hwui.layer_cache_size $((memTotal*5/100));
+		resetprop ro.hwui.path_cache_size $((memTotal*2/100));
+		resetprop ro.hwui.r_buffer_cache_size $((memTotal/100));
+		resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100));
+		resetprop ro.hwui.texture_cache_flushrate 0.3
+	fi
+	sendToLog "Optimized GPU caches";
 
 
-if [ -e /proc/gpufreq/gpufreq_limited_thermal_ignore ]; then
-	write /proc/gpufreq/gpufreq_limited_thermal_ignore "1"
-	sendToLog "Disabled gpufreq thermal"
-fi;
+	if [ -e /proc/gpufreq/gpufreq_limited_thermal_ignore ]; then
+		write /proc/gpufreq/gpufreq_limited_thermal_ignore "1"
+		sendToLog "Disabled gpufreq thermal"
+	fi;
 
-if [ -e /proc/mali/dvfs_enable ]; then
-	write /proc/mali/dvfs_enable "1"
-	sendToLog "dvfs enabled"
-fi;
+	if [ -e /proc/mali/dvfs_enable ]; then
+		write /proc/mali/dvfs_enable "1"
+		sendToLog "dvfs enabled"
+	fi;
 
-if [ -e /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate ]; then
-	write /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate "1"
-	sendToLog "Simple GPU algorithm enabled"
-fi;
+	if [ -e /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate ]; then
+		write /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate "1"
+		sendToLog "Simple GPU algorithm enabled"
+	fi;
 
-# Adreno idler
-if [ -e /sys/module/adreno_idler/parameters/adreno_idler_active ]; then
-	write /sys/module/adreno_idler/parameters/adreno_idler_active "Y"
-	write /sys/module/adreno_idler/parameters/adreno_idler_idleworkload "10000"
-	write /sys/module/adreno_idler/parameters/adreno_idler_downdifferential "35"
-	write /sys/module/adreno_idler/parameters/adreno_idler_idlewait "25"
-	sendToLog "Enabled and tweaked adreno idler"
-fi;
+	# Adreno idler
+	if [ -e /sys/module/adreno_idler/parameters/adreno_idler_active ]; then
+		write /sys/module/adreno_idler/parameters/adreno_idler_active "Y"
+		write /sys/module/adreno_idler/parameters/adreno_idler_idleworkload "10000"
+		write /sys/module/adreno_idler/parameters/adreno_idler_downdifferential "35"
+		write /sys/module/adreno_idler/parameters/adreno_idler_idlewait "25"
+		sendToLog "Enabled and tweaked adreno idler"
+	fi;
 
-if [ -e $gpu/devfreq/adrenoboost ]; then
-	write $gpu/devfreq/adrenoboost "0"
-	sendToLog "Adreno boost is set to 0"
-fi;
+	if [ -e $gpu/devfreq/adrenoboost ]; then
+		write $gpu/devfreq/adrenoboost "0"
+		sendToLog "Adreno boost is set to 0"
+	fi;
 
-if [ -e $gpu/throttling ]; then
-	write $gpu/throttling "0"
-	sendToLog "GPU throttling disabled"
-fi;
+	if [ -e $gpu/throttling ]; then
+		write $gpu/throttling "0"
+		sendToLog "GPU throttling disabled"
+	fi;
 
-if [ -e $gpu/max_pwrlevel ]; then
-	write $gpu/max_pwrlevel "0"
-	sendToLog "GPU max power level disabled"
-fi;
+	if [ -e $gpu/max_pwrlevel ]; then
+		write $gpu/max_pwrlevel "0"
+		sendToLog "GPU max power level disabled"
+	fi;
 
-if [ -e $gpu/force_no_nap ]; then
-	write $gpu/force_no_nap "0"
-	sendToLog "force_no_nap disabled"
-fi;
+	if [ -e $gpu/force_no_nap ]; then
+		write $gpu/force_no_nap "0"
+		sendToLog "force_no_nap disabled"
+	fi;
 
-if [ -e $gpu/bus_split ]; then
-	write $gpu/bus_split "1"
-	sendToLog "bus_split enabled"
-fi;
+	if [ -e $gpu/bus_split ]; then
+		write $gpu/bus_split "1"
+		sendToLog "bus_split enabled"
+	fi;
 
-if [ -e $gpu/force_bus_on ]; then
-	write $gpu/force_bus_on "0"
-	sendToLog "force_bus_on disabled"
-fi;
+	if [ -e $gpu/force_bus_on ]; then
+		write $gpu/force_bus_on "0"
+		sendToLog "force_bus_on disabled"
+	fi;
 
-if [ -e $gpu/force_clk_on ]; then
-	write $gpu/force_clk_on "0"
-	sendToLog "force_clk_on disabled"
-fi;
+	if [ -e $gpu/force_clk_on ]; then
+		write $gpu/force_clk_on "0"
+		sendToLog "force_clk_on disabled"
+	fi;
 
-if [ -e $gpu/force_rail_on ]; then
-	write $gpu/force_rail_on "0"
-	sendToLog "force_rail_on disabled"
-fi;
+	if [ -e $gpu/force_rail_on ]; then
+		write $gpu/force_rail_on "0"
+		sendToLog "force_rail_on disabled"
+	fi;
 
-sendToLog "Power saving GPU optimization applied"
-sendToLog "$divider";
+	sendToLog "Power saving GPU optimization applied"
+	sendToLog "$divider";
 }
 
 optimizeBuffers() {
-sendToLog "Changing GPU buffer count"
+	sendToLog "Changing GPU buffer count"
 
-setprop debug.egl.buffcount 4
+	setprop debug.egl.buffcount 4
 
-sendToLog "GPU buffer count set to 4"
-sendToLog "$divider";
+	sendToLog "GPU buffer count set to 4"
+	sendToLog "$divider";
 }
 
 renderOpenglesUsingGpu() {
-sendToLog "Setting GPU to render OpenGLES..."
+	sendToLog "Setting GPU to render OpenGLES..."
 
-setprop debug.egl.hw 1
+	setprop debug.egl.hw 1
 
-sendToLog "GPU successfully set up to render OpenGLES"
-sendToLog "$divider";
+	sendToLog "GPU successfully set up to render OpenGLES"
+	sendToLog "$divider";
 }
 
 useOpenglSkia() {
-sendToLog "Changing app rendering to skiagl..."
+	sendToLog "Changing app rendering to skiagl..."
 
-setprop debug.hwui.renderer skiagl
+	setprop debug.hwui.renderer skiagl
 
-sendToLog "Rendering chaned to skiagl"
-sendToLog "$divider";
+	sendToLog "Rendering chaned to skiagl"
+	sendToLog "$divider";
 }
 
 forceGpuRendering() {
-
-if [ $1 -eq 0 ]; then
-	sendToLog "Disabling force GPU rendering..."
-	setprop persist.sys.ui.hw 0
-	sendToLog "Force GPU rendering successfully disabled"
-elif [ $1 -eq 1 ]; then
-	sendToLog "Enabling force GPU rendering..."
-	setprop persist.sys.ui.hw 1
-	sendToLog "Force GPU rendering successfully enabled"
-fi
- 
-sendToLog "$divider";
+	if [ $1 -eq 0 ]; then
+		sendToLog "Disabling force GPU rendering..."
+		setprop persist.sys.ui.hw 0
+		sendToLog "Force GPU rendering successfully disabled"
+	elif [ $1 -eq 1 ]; then
+		sendToLog "Enabling force GPU rendering..."
+		setprop persist.sys.ui.hw 1
+		sendToLog "Force GPU rendering successfully enabled"
+	fi
+	 
+	sendToLog "$divider";
 }
 
 force4xMsaa() {
-
-if [ $1 -eq 0 ]; then
-	sendToLog "Disabling force 4x MSAA..."
-	setprop debug.egl.force_msaa 0
-	sendToLog "Force 4x MSAA successfully disabled"
-elif [ $1 -eq 1 ]; then
-	sendToLog "Enabling force 4x MSAA..."
-	setprop debug.egl.force_msaa 1
-	sendToLog "Force 4x MSAA successfully enabled"
-fi
- 
-sendToLog "$divider";
+	if [ $1 -eq 0 ]; then
+		sendToLog "Disabling force 4x MSAA..."
+		setprop debug.egl.force_msaa 0
+		sendToLog "Force 4x MSAA successfully disabled"
+	elif [ $1 -eq 1 ]; then
+		sendToLog "Enabling force 4x MSAA..."
+		setprop debug.egl.force_msaa 1
+		sendToLog "Force 4x MSAA successfully enabled"
+	fi
+	 
+	sendToLog "$divider";
 }
 
 enableIoStats() {
-sendToLog "Enabling I/O Stats..."
+	sendToLog "Enabling I/O Stats..."
 
-blocks="/sys/block/*"
+	blocks="/sys/block/*"
 
-for i in $blocks;
-	do
-		write "$i/queue/iostats" "1"
-		sendToLog "iostats=1 in $i"
-done
+	for i in $blocks;
+		do
+			write "$i/queue/iostats" "1"
+			sendToLog "iostats=1 in $i"
+	done
 
-sendToLog "I/O Stats enabled"
-sendToLog "$divider";
+	sendToLog "I/O Stats enabled"
+	sendToLog "$divider";
 }
 
 disableIoStats() {
-sendToLog "Disabling I/O Stats..."
+	sendToLog "Disabling I/O Stats..."
 
-blocks="/sys/block/*"
+	blocks="/sys/block/*"
 
-for i in $blocks;
-	do
-		write "$i/queue/iostats" "0"
-		sendToLog "iostats=0 in $i"
-done
+	for i in $blocks;
+		do
+			write "$i/queue/iostats" "0"
+			sendToLog "iostats=0 in $i"
+	done
 
-sendToLog "I/O Stats disabled"
-sendToLog "$divider";
+	sendToLog "I/O Stats disabled"
+	sendToLog "$divider";
 }
 
 sdTweak() {
 
-# Storage blocks eMMC
-DEV_MMCBLK0="/dev/block/mmcblk0";
-MMCBLK0="/sys/block/mmcblk0";
-MMCBLK0_READ_AHEAD_KB="$MMCBLK0/queue/read_ahead_kb";
-DEV_MMCBLK1="/dev/block/mmcblk1";
-MMCBLK1="/sys/block/mmcblk1";
-MMCBLK1_READ_AHEAD_KB="$MMCBLK1/queue/read_ahead_kb";
+	# Storage blocks eMMC
+	DEV_MMCBLK0="/dev/block/mmcblk0";
+	MMCBLK0="/sys/block/mmcblk0";
+	MMCBLK0_READ_AHEAD_KB="$MMCBLK0/queue/read_ahead_kb";
+	DEV_MMCBLK1="/dev/block/mmcblk1";
+	MMCBLK1="/sys/block/mmcblk1";
+	MMCBLK1_READ_AHEAD_KB="$MMCBLK1/queue/read_ahead_kb";
 
-# Storage blocks UFS
-SDA="/sys/block/sda";
+	# Storage blocks UFS
+	SDA="/sys/block/sda";
 
-sendToLog "Activating SD speed tweak";
+	sendToLog "Activating SD speed tweak";
 
-# On some devices:
-# SD* and MMCBLK0 is sdcard
-#
+	# On some devices:
+	# SD* and MMCBLK0 is sdcard
+	#
 
-if [ -e $SDA ] && [ -e $MMCBLK0 ]; then
+	if [ -e $SDA ] && [ -e $MMCBLK0 ]; then
 
-	sendToLog "SD card mounted on $DEV_MMCBLK0";
-	external_totalSize=$(blockdev --getsize64 $DEV_MMCBLK0);
+		sendToLog "SD card mounted on $DEV_MMCBLK0";
+		external_totalSize=$(blockdev --getsize64 $DEV_MMCBLK0);
 
-	if [ "$external_totalSize" -lt 8589934592 ]; then
-		extReadAhead="256";
-	elif [ "$external_totalSize" -ge 8589934592 ] && [ "$external_totalSize" -lt 17179869184 ]; then
-		extReadAhead="512";
-	elif [ "$external_totalSize" -ge 17179869184 ] && [ "$external_totalSize" -lt 34359738368 ]; then
-		extReadAhead="1024";
-	elif [ "$external_totalSize" -ge 34359738368 ]; then
-		extReadAhead="2048";
+		if [ "$external_totalSize" -lt 8589934592 ]; then
+			extReadAhead="256";
+		elif [ "$external_totalSize" -ge 8589934592 ] && [ "$external_totalSize" -lt 17179869184 ]; then
+			extReadAhead="512";
+		elif [ "$external_totalSize" -ge 17179869184 ] && [ "$external_totalSize" -lt 34359738368 ]; then
+			extReadAhead="1024";
+		elif [ "$external_totalSize" -ge 34359738368 ]; then
+			extReadAhead="2048";
+		else
+			extReadAhead="256";
+		fi
+
+		sendToLog "Your SD Card size is: $((external_totalSize/1024/1024/1024))kb";
+		sendToLog "Read Ahead based on SD Card size: $((extReadAhead))kb";
+		write $MMCBLK0_READ_AHEAD_KB $extReadAhead;
+		sendToLog "SD speed tweak is activated";
+
+	elif [ -e $SDA ] && [ -e $MMCBLK1 ]; then
+
+		sendToLog "SD card mounted on $DEV_MMCBLK1";
+		external_totalSize=$(blockdev --getsize64 $DEV_MMCBLK1);
+
+		if [ "$external_totalSize" -lt 8589934592 ]; then
+			extReadAhead="256";
+		elif [ "$external_totalSize" -ge 8589934592 ] && [ "$external_totalSize" -lt 17179869184 ]; then
+			extReadAhead="512";
+		elif [ "$external_totalSize" -ge 17179869184 ] && [ "$external_totalSize" -lt 34359738368 ]; then
+			extReadAhead="1024";
+		elif [ "$external_totalSize" -ge 34359738368 ]; then
+			extReadAhead="2048";
+		else
+			extReadAhead="256";
+		fi
+
+		sendToLog "Your SD Card size is: $((external_totalSize/1024/1024/1024))kb";
+		sendToLog "Read Ahead based on SD Card size: $((extReadAhead))kb";
+		write $MMCBLK1_READ_AHEAD_KB $extReadAhead;
+		sendToLog "SD speed tweak is activated";
+		
+	elif [ -e $MMCBLK1 ]; then
+
+		sendToLog "SD card mounted on $DEV_MMCBLK1";
+		external_totalSize=$(blockdev --getsize64 $DEV_MMCBLK1);
+
+		if [ "$external_totalSize" -lt 8589934592 ]; then
+			extReadAhead="256";
+		elif [ "$external_totalSize" -ge 8589934592 ] && [ "$external_totalSize" -lt 17179869184 ]; then
+			extReadAhead="512";
+		elif [ "$external_totalSize" -ge 17179869184 ] && [ "$external_totalSize" -lt 34359738368 ]; then
+			extReadAhead="1024";
+		elif [ "$external_totalSize" -ge 34359738368 ]; then
+			extReadAhead="2048";
+		else
+			extReadAhead="256";
+		fi
+
+		sendToLog "Your SD Card size is: $((external_totalSize/1024/1024/1024))kb";
+		sendToLog "Read Ahead based on SD Card size: $((extReadAhead))kb";
+		write $MMCBLK1_READ_AHEAD_KB $extReadAhead;
+		sendToLog "SD speed tweak is activated";
+
 	else
-		extReadAhead="256";
+		sendToLog "SD card not available or not supported...";
+
 	fi
-
-	sendToLog "Your SD Card size is: $((external_totalSize/1024/1024/1024))kb";
-	sendToLog "Read Ahead based on SD Card size: $((extReadAhead))kb";
-	write $MMCBLK0_READ_AHEAD_KB $extReadAhead;
-	sendToLog "SD speed tweak is activated";
-
-elif [ -e $SDA ] && [ -e $MMCBLK1 ]; then
-
-	sendToLog "SD card mounted on $DEV_MMCBLK1";
-	external_totalSize=$(blockdev --getsize64 $DEV_MMCBLK1);
-
-	if [ "$external_totalSize" -lt 8589934592 ]; then
-		extReadAhead="256";
-	elif [ "$external_totalSize" -ge 8589934592 ] && [ "$external_totalSize" -lt 17179869184 ]; then
-		extReadAhead="512";
-	elif [ "$external_totalSize" -ge 17179869184 ] && [ "$external_totalSize" -lt 34359738368 ]; then
-		extReadAhead="1024";
-	elif [ "$external_totalSize" -ge 34359738368 ]; then
-		extReadAhead="2048";
-	else
-		extReadAhead="256";
-	fi
-
-	sendToLog "Your SD Card size is: $((external_totalSize/1024/1024/1024))kb";
-	sendToLog "Read Ahead based on SD Card size: $((extReadAhead))kb";
-	write $MMCBLK1_READ_AHEAD_KB $extReadAhead;
-	sendToLog "SD speed tweak is activated";
-	
-elif [ -e $MMCBLK1 ]; then
-
-	sendToLog "SD card mounted on $DEV_MMCBLK1";
-	external_totalSize=$(blockdev --getsize64 $DEV_MMCBLK1);
-
-	if [ "$external_totalSize" -lt 8589934592 ]; then
-		extReadAhead="256";
-	elif [ "$external_totalSize" -ge 8589934592 ] && [ "$external_totalSize" -lt 17179869184 ]; then
-		extReadAhead="512";
-	elif [ "$external_totalSize" -ge 17179869184 ] && [ "$external_totalSize" -lt 34359738368 ]; then
-		extReadAhead="1024";
-	elif [ "$external_totalSize" -ge 34359738368 ]; then
-		extReadAhead="2048";
-	else
-		extReadAhead="256";
-	fi
-
-	sendToLog "Your SD Card size is: $((external_totalSize/1024/1024/1024))kb";
-	sendToLog "Read Ahead based on SD Card size: $((extReadAhead))kb";
-	write $MMCBLK1_READ_AHEAD_KB $extReadAhead;
-	sendToLog "SD speed tweak is activated";
-
-else
-	sendToLog "SD card not available or not supported...";
-
-fi
-sendToLog "$divider";
+	sendToLog "$divider";
 }
  
 ioBlocksOptimizationBalanced() {
-sendToLog "Activating balanced I/O blocks optimization..."
+	sendToLog "Activating balanced I/O blocks optimization..."
 
-blocks="/sys/block/*"
+	blocks="/sys/block/*"
 
-for i in $blocks;
-	do
-	
-	#This file allows to turn off the disk entropy contribution. Default
-	#value of this file is '1'(on).
-	if [ -e "$i/queue/add_random" ]; then
-		write "$i/queue/add_random" "0"
-		sendToLog "add_random=0 in $i"
-	fi
-	
-	#This enables the user to disable the lookup logic involved with IO
-	#merging requests in the block layer. By default (0) all merges are
-	#enabled. When set to 1 only simple one-hit merges will be tried. When
-	#set to 2 no merge algorithms will be tried (including one-hit or more
-	#complex tree/hash lookups).
-	if [ -e "$i/queue/nomerges" ]; then
-		write "$i/queue/nomerges" "2"
-		sendToLog "nomerges=2 in $i"
-	fi
+	for i in $blocks;
+		do
 		
-	#If this option is '1', the block layer will migrate request completions to the
-	#cpu "group" that originally submitted the request. For some workloads this
-	#provides a significant reduction in CPU cycles due to caching effects.
-	#For storage configurations that need to maximize distribution of completion
-	#processing setting this option to '2' forces the completion to run on the
-	#requesting cpu (bypassing the "group" aggregation logic).
-	if [ -e "$i/queue/rq_affinity" ]; then
-		write "$i/queue/rq_affinity" "1"
-		sendToLog "rq_affinity=1 in $i"
-	fi
-	
-	#This controls how many requests may be allocated in the block layer for
-	#read or write requests. Note that the total allocated number may be twice
-	#this amount, since it applies only to reads or writes (not the accumulated
-	#sum).
-	#To avoid priority inversion through request starvation, a request
-	#queue maintains a separate request pool per each cgroup when
-	#CONFIG_BLK_CGROUP is enabled, and this parameter applies to each such
-	#per-block-cgroup request pool.  IOW, if there are N block cgroups,
-	#each request queue may have up to N request pools, each independently
-	#regulated by nr_requests.
-	if [ -e "$i/queue/nr_requests" ]; then
-		write "$i/queue/nr_requests" "128"
-		sendToLog "nr_requests=128 in $i"
-	fi
-	
-	#Maximum number of kilobytes to read-ahead for filesystems on this block
-	#device.
-	if [ -e "$i/queue/read_ahead_kb" ]; then
-		write "$i/queue/read_ahead_kb" "128"
-		sendToLog "read_ahead_kb=128 in $i"
-	fi
-	
-	# Tell scheduler that it's facing with non rotational drive to disable
-	# unnecessary seek-reducing logic in the scheduler. We are not using rotational HDDs
-	#if [ -e "$i/queue/rotational" ]; then
-	#	write "$i/queue/rotational" "0"
-	#	sendToLog "rotational=0 in $i"
-	#fi
-	
-done
+		#This file allows to turn off the disk entropy contribution. Default
+		#value of this file is '1'(on).
+		if [ -e "$i/queue/add_random" ]; then
+			write "$i/queue/add_random" "0"
+			sendToLog "add_random=0 in $i"
+		fi
+		
+		#This enables the user to disable the lookup logic involved with IO
+		#merging requests in the block layer. By default (0) all merges are
+		#enabled. When set to 1 only simple one-hit merges will be tried. When
+		#set to 2 no merge algorithms will be tried (including one-hit or more
+		#complex tree/hash lookups).
+		if [ -e "$i/queue/nomerges" ]; then
+			write "$i/queue/nomerges" "2"
+			sendToLog "nomerges=2 in $i"
+		fi
+			
+		#If this option is '1', the block layer will migrate request completions to the
+		#cpu "group" that originally submitted the request. For some workloads this
+		#provides a significant reduction in CPU cycles due to caching effects.
+		#For storage configurations that need to maximize distribution of completion
+		#processing setting this option to '2' forces the completion to run on the
+		#requesting cpu (bypassing the "group" aggregation logic).
+		if [ -e "$i/queue/rq_affinity" ]; then
+			write "$i/queue/rq_affinity" "1"
+			sendToLog "rq_affinity=1 in $i"
+		fi
+		
+		#This controls how many requests may be allocated in the block layer for
+		#read or write requests. Note that the total allocated number may be twice
+		#this amount, since it applies only to reads or writes (not the accumulated
+		#sum).
+		#To avoid priority inversion through request starvation, a request
+		#queue maintains a separate request pool per each cgroup when
+		#CONFIG_BLK_CGROUP is enabled, and this parameter applies to each such
+		#per-block-cgroup request pool.  IOW, if there are N block cgroups,
+		#each request queue may have up to N request pools, each independently
+		#regulated by nr_requests.
+		if [ -e "$i/queue/nr_requests" ]; then
+			write "$i/queue/nr_requests" "128"
+			sendToLog "nr_requests=128 in $i"
+		fi
+		
+		#Maximum number of kilobytes to read-ahead for filesystems on this block
+		#device.
+		if [ -e "$i/queue/read_ahead_kb" ]; then
+			write "$i/queue/read_ahead_kb" "128"
+			sendToLog "read_ahead_kb=128 in $i"
+		fi
+		
+		# Tell scheduler that it's facing with non rotational drive to disable
+		# unnecessary seek-reducing logic in the scheduler. We are not using rotational HDDs
+		if [ -e "$i/queue/rotational" ]; then
+			write "$i/queue/rotational" "0"
+			sendToLog "rotational=0 in $i"
+		fi
+		
+	done
 
-# MMC CRC disabled
-removable=/sys/module/mmc_core/parameters/removable
-if [ -e $removable ]; then
-	write $removable "N"
-	sendToLog "CRC Checks disabled $removable"
-fi;
+	# MMC CRC disabled
+	removable=/sys/module/mmc_core/parameters/removable
+	if [ -e $removable ]; then
+		write $removable "N"
+		sendToLog "CRC Checks disabled $removable"
+	fi;
 
-crc=/sys/module/mmc_core/parameters/crc
-if [ -e $crc ]; then
-	write $crc "N"
-	sendToLog "CRC Checks disabled $crc"
-fi;
+	crc=/sys/module/mmc_core/parameters/crc
+	if [ -e $crc ]; then
+		write $crc "N"
+		sendToLog "CRC Checks disabled $crc"
+	fi;
 
-use_spi_crc=/sys/module/mmc_core/parameters/use_spi_crc
-if [ -e $use_spi_crc ]; then
-	write $use_spi_crc "N"
-	sendToLog "CRC Checks disabled $use_spi_crc"
-fi;
+	use_spi_crc=/sys/module/mmc_core/parameters/use_spi_crc
+	if [ -e $use_spi_crc ]; then
+		write $use_spi_crc "N"
+		sendToLog "CRC Checks disabled $use_spi_crc"
+	fi;
 
-sendToLog "Balanced I/O blocks optimization activated"
-sendToLog "$divider";
+	sendToLog "Balanced I/O blocks optimization activated"
+	sendToLog "$divider";
 }
 
 ioBlocksOptimizationPerformance() {
-sendToLog "Activating performance I/O blocks optimization..."
+	sendToLog "Activating performance I/O blocks optimization..."
 
-blocks="/sys/block/*"
+	blocks="/sys/block/*"
 
-for i in $blocks;
-	do
-	
-	#This file allows to turn off the disk entropy contribution. Default
-	#value of this file is '1'(on).
-	if [ -e "$i/queue/add_random" ]; then
-		write "$i/queue/add_random" "0"
-		sendToLog "add_random=0 in $i"
-	fi
-	
-	#This enables the user to disable the lookup logic involved with IO
-	#merging requests in the block layer. By default (0) all merges are
-	#enabled. When set to 1 only simple one-hit merges will be tried. When
-	#set to 2 no merge algorithms will be tried (including one-hit or more
-	#complex tree/hash lookups).
-	if [ -e "$i/queue/nomerges" ]; then
-		write "$i/queue/nomerges" "2"
-		sendToLog "nomerges=2 in $i"
-	fi
+	for i in $blocks;
+		do
 		
-	#If this option is '1', the block layer will migrate request completions to the
-	#cpu "group" that originally submitted the request. For some workloads this
-	#provides a significant reduction in CPU cycles due to caching effects.
-	#For storage configurations that need to maximize distribution of completion
-	#processing setting this option to '2' forces the completion to run on the
-	#requesting cpu (bypassing the "group" aggregation logic).
-	if [ -e "$i/queue/rq_affinity" ]; then
-		write "$i/queue/rq_affinity" "1"
-		sendToLog "rq_affinity=1 in $i"
-	fi
-	
-	#This controls how many requests may be allocated in the block layer for
-	#read or write requests. Note that the total allocated number may be twice
-	#this amount, since it applies only to reads or writes (not the accumulated
-	#sum).
-	#To avoid priority inversion through request starvation, a request
-	#queue maintains a separate request pool per each cgroup when
-	#CONFIG_BLK_CGROUP is enabled, and this parameter applies to each such
-	#per-block-cgroup request pool.  IOW, if there are N block cgroups,
-	#each request queue may have up to N request pools, each independently
-	#regulated by nr_requests.
-	if [ -e "$i/queue/nr_requests" ]; then
-		write "$i/queue/nr_requests" "256"
-		sendToLog "nr_requests=256 in $i"
-	fi
-	
-	#Maximum number of kilobytes to read-ahead for filesystems on this block
-	#device.
-	if [ -e "$i/queue/read_ahead_kb" ]; then
-		write "$i/queue/read_ahead_kb" "256"
-		sendToLog "read_ahead_kb=256 in $i"
-	fi
-	
-	# Tell scheduler that it's facing with non rotational drive to disable
-	# unnecessary seek-reducing logic in the scheduler. We are not using rotational HDDs
-	#if [ -e "$i/queue/rotational" ]; then
-	#	write "$i/queue/rotational" "0"
-	#	sendToLog "rotational=0 in $i"
-	#fi
-	
-done
+		#This file allows to turn off the disk entropy contribution. Default
+		#value of this file is '1'(on).
+		if [ -e "$i/queue/add_random" ]; then
+			write "$i/queue/add_random" "0"
+			sendToLog "add_random=0 in $i"
+		fi
+		
+		#This enables the user to disable the lookup logic involved with IO
+		#merging requests in the block layer. By default (0) all merges are
+		#enabled. When set to 1 only simple one-hit merges will be tried. When
+		#set to 2 no merge algorithms will be tried (including one-hit or more
+		#complex tree/hash lookups).
+		if [ -e "$i/queue/nomerges" ]; then
+			write "$i/queue/nomerges" "1"
+			sendToLog "nomerges=1 in $i"
+		fi
+			
+		#If this option is '1', the block layer will migrate request completions to the
+		#cpu "group" that originally submitted the request. For some workloads this
+		#provides a significant reduction in CPU cycles due to caching effects.
+		#For storage configurations that need to maximize distribution of completion
+		#processing setting this option to '2' forces the completion to run on the
+		#requesting cpu (bypassing the "group" aggregation logic).
+		if [ -e "$i/queue/rq_affinity" ]; then
+			write "$i/queue/rq_affinity" "2"
+			sendToLog "rq_affinity=2 in $i"
+		fi
+		
+		#This controls how many requests may be allocated in the block layer for
+		#read or write requests. Note that the total allocated number may be twice
+		#this amount, since it applies only to reads or writes (not the accumulated
+		#sum).
+		#To avoid priority inversion through request starvation, a request
+		#queue maintains a separate request pool per each cgroup when
+		#CONFIG_BLK_CGROUP is enabled, and this parameter applies to each such
+		#per-block-cgroup request pool.  IOW, if there are N block cgroups,
+		#each request queue may have up to N request pools, each independently
+		#regulated by nr_requests.
+		if [ -e "$i/queue/nr_requests" ]; then
+			write "$i/queue/nr_requests" "256"
+			sendToLog "nr_requests=256 in $i"
+		fi
+		
+		#Maximum number of kilobytes to read-ahead for filesystems on this block
+		#device.
+		if [ -e "$i/queue/read_ahead_kb" ]; then
+			write "$i/queue/read_ahead_kb" "256"
+			sendToLog "read_ahead_kb=256 in $i"
+		fi
+		
+		# Tell scheduler that it's facing with non rotational drive to disable
+		# unnecessary seek-reducing logic in the scheduler. We are not using rotational HDDs
+		if [ -e "$i/queue/rotational" ]; then
+			write "$i/queue/rotational" "0"
+			sendToLog "rotational=0 in $i"
+		fi
+		
+	done
 
-# MMC CRC disabled
-removable=/sys/module/mmc_core/parameters/removable
-if [ -e $removable ]; then
-	write $removable "N"
-	sendToLog "CRC Checks disabled $removable"
-fi;
+	# MMC CRC disabled
+	removable=/sys/module/mmc_core/parameters/removable
+	if [ -e $removable ]; then
+		write $removable "N"
+		sendToLog "CRC Checks disabled $removable"
+	fi;
 
-crc=/sys/module/mmc_core/parameters/crc
-if [ -e $crc ]; then
-	write $crc "N"
-	sendToLog "CRC Checks disabled $crc"
-fi;
+	crc=/sys/module/mmc_core/parameters/crc
+	if [ -e $crc ]; then
+		write $crc "N"
+		sendToLog "CRC Checks disabled $crc"
+	fi;
 
-use_spi_crc=/sys/module/mmc_core/parameters/use_spi_crc
-if [ -e $use_spi_crc ]; then
-	write $use_spi_crc "N"
-	sendToLog "CRC Checks disabled $use_spi_crc"
-fi;
+	use_spi_crc=/sys/module/mmc_core/parameters/use_spi_crc
+	if [ -e $use_spi_crc ]; then
+		write $use_spi_crc "N"
+		sendToLog "CRC Checks disabled $use_spi_crc"
+	fi;
 
-sendToLog "Performance I/O blocks optimization activated"
-sendToLog "$divider";
+	sendToLog "Performance I/O blocks optimization activated"
+	sendToLog "$divider";
 }
 
 ioBlocksOptimizationPowerSaving() {
-sendToLog "Activating power saving I/O blocks optimization..."
+	sendToLog "Activating power saving I/O blocks optimization..."
 
-blocks="/sys/block/*"
+	blocks="/sys/block/*"
 
-for i in $blocks;
-	do
-	
-	#This file allows to turn off the disk entropy contribution. Default
-	#value of this file is '1'(on).
-	if [ -e "$i/queue/add_random" ]; then
-		write "$i/queue/add_random" "0"
-		sendToLog "add_random=0 in $i"
-	fi
-	
-	#This enables the user to disable the lookup logic involved with IO
-	#merging requests in the block layer. By default (0) all merges are
-	#enabled. When set to 1 only simple one-hit merges will be tried. When
-	#set to 2 no merge algorithms will be tried (including one-hit or more
-	#complex tree/hash lookups).
-	if [ -e "$i/queue/nomerges" ]; then
-		write "$i/queue/nomerges" "2"
-		sendToLog "nomerges=2 in $i"
-	fi
-	
-	#If this option is '1', the block layer will migrate request completions to the
-	#cpu "group" that originally submitted the request. For some workloads this
-	#provides a significant reduction in CPU cycles due to caching effects.
-	#For storage configurations that need to maximize distribution of completion
-	#processing setting this option to '2' forces the completion to run on the
-	#requesting cpu (bypassing the "group" aggregation logic).
-	if [ -e "$i/queue/rq_affinity" ]; then
-		write "$i/queue/rq_affinity" "1"
-		sendToLog "rq_affinity=1 in $i"
-	fi
-	
-	#This controls how many requests may be allocated in the block layer for
-	#read or write requests. Note that the total allocated number may be twice
-	#this amount, since it applies only to reads or writes (not the accumulated
-	#sum).
-	#To avoid priority inversion through request starvation, a request
-	#queue maintains a separate request pool per each cgroup when
-	#CONFIG_BLK_CGROUP is enabled, and this parameter applies to each such
-	#per-block-cgroup request pool.  IOW, if there are N block cgroups,
-	#each request queue may have up to N request pools, each independently
-	#regulated by nr_requests.
-	if [ -e "$i/queue/nr_requests" ]; then
-		write "$i/queue/nr_requests" "64"
-		sendToLog "nr_requests=64 in $i"
-	fi
-	
-	#Maximum number of kilobytes to read-ahead for filesystems on this block
-	#device.
-	if [ -e "$i/queue/read_ahead_kb" ]; then
-		write "$i/queue/read_ahead_kb" "128"
-		sendToLog "read_ahead_kb=128 in $i"
-	fi
+	for i in $blocks;
+		do
+		
+		#This file allows to turn off the disk entropy contribution. Default
+		#value of this file is '1'(on).
+		if [ -e "$i/queue/add_random" ]; then
+			write "$i/queue/add_random" "0"
+			sendToLog "add_random=0 in $i"
+		fi
+		
+		#This enables the user to disable the lookup logic involved with IO
+		#merging requests in the block layer. By default (0) all merges are
+		#enabled. When set to 1 only simple one-hit merges will be tried. When
+		#set to 2 no merge algorithms will be tried (including one-hit or more
+		#complex tree/hash lookups).
+		if [ -e "$i/queue/nomerges" ]; then
+			write "$i/queue/nomerges" "2"
+			sendToLog "nomerges=2 in $i"
+		fi
+		
+		#If this option is '1', the block layer will migrate request completions to the
+		#cpu "group" that originally submitted the request. For some workloads this
+		#provides a significant reduction in CPU cycles due to caching effects.
+		#For storage configurations that need to maximize distribution of completion
+		#processing setting this option to '2' forces the completion to run on the
+		#requesting cpu (bypassing the "group" aggregation logic).
+		if [ -e "$i/queue/rq_affinity" ]; then
+			write "$i/queue/rq_affinity" "1"
+			sendToLog "rq_affinity=1 in $i"
+		fi
+		
+		#This controls how many requests may be allocated in the block layer for
+		#read or write requests. Note that the total allocated number may be twice
+		#this amount, since it applies only to reads or writes (not the accumulated
+		#sum).
+		#To avoid priority inversion through request starvation, a request
+		#queue maintains a separate request pool per each cgroup when
+		#CONFIG_BLK_CGROUP is enabled, and this parameter applies to each such
+		#per-block-cgroup request pool.  IOW, if there are N block cgroups,
+		#each request queue may have up to N request pools, each independently
+		#regulated by nr_requests.
+		if [ -e "$i/queue/nr_requests" ]; then
+			write "$i/queue/nr_requests" "64"
+			sendToLog "nr_requests=64 in $i"
+		fi
+		
+		#Maximum number of kilobytes to read-ahead for filesystems on this block
+		#device.
+		if [ -e "$i/queue/read_ahead_kb" ]; then
+			write "$i/queue/read_ahead_kb" "128"
+			sendToLog "read_ahead_kb=128 in $i"
+		fi
 
-	# Tell scheduler that it's facing with non rotational drive to disable
-	# unnecessary seek-reducing logic in the scheduler. We are not using rotational HDDs
-	#if [ -e "$i/queue/rotational" ]; then
-	#	write "$i/queue/rotational" "0"
-	#	sendToLog "rotational=0 in $i"
-	#fi
-	
-done
+		# Tell scheduler that it's facing with non rotational drive to disable
+		# unnecessary seek-reducing logic in the scheduler. We are not using rotational HDDs
+		if [ -e "$i/queue/rotational" ]; then
+			write "$i/queue/rotational" "0"
+			sendToLog "rotational=0 in $i"
+		fi
+		
+	done
 
-# MMC CRC disabled
-removable=/sys/module/mmc_core/parameters/removable
-if [ -e $removable ]; then
-	write $removable "N"
-	sendToLog "CRC Checks disabled $removable"
-fi;
+	# MMC CRC disabled
+	removable=/sys/module/mmc_core/parameters/removable
+	if [ -e $removable ]; then
+		write $removable "N"
+		sendToLog "CRC Checks disabled $removable"
+	fi;
 
-crc=/sys/module/mmc_core/parameters/crc
-if [ -e $crc ]; then
-	write $crc "N"
-	sendToLog "CRC Checks disabled $crc"
-fi;
+	crc=/sys/module/mmc_core/parameters/crc
+	if [ -e $crc ]; then
+		write $crc "N"
+		sendToLog "CRC Checks disabled $crc"
+	fi;
 
-use_spi_crc=/sys/module/mmc_core/parameters/use_spi_crc
-if [ -e $use_spi_crc ]; then
-	write $use_spi_crc "N"
-	sendToLog "CRC Checks disabled $use_spi_crc"
-fi;
+	use_spi_crc=/sys/module/mmc_core/parameters/use_spi_crc
+	if [ -e $use_spi_crc ]; then
+		write $use_spi_crc "N"
+		sendToLog "CRC Checks disabled $use_spi_crc"
+	fi;
 
-sendToLog "Power saving I/O blocks optimization activated"
-sendToLog "$divider";
+	sendToLog "Power saving I/O blocks optimization activated"
+	sendToLog "$divider";
 }
 
 ioExtendedQueue() {
-sendToLog "Activating I/O extend queue..."
+	sendToLog "Activating I/O extend queue..."
 
-blocks="/sys/block/*"
+	blocks="/sys/block/*"
 
-for i in $blocks;
-	do
-	if [ -e "$i" ]; then
-		write "$i/queue/nr_requests" "512"
-		sendToLog "nr_requests=512 in $i"
-	fi
-done
+	for i in $blocks;
+		do
+		if [ -e "$i" ]; then
+			write "$i/queue/nr_requests" "512"
+			sendToLog "nr_requests=512 in $i"
+		fi
+	done
 
-sendToLog "I/O extend queue is activated"
-sendToLog "$divider";
+	sendToLog "I/O extend queue is activated"
+	sendToLog "$divider";
 }
 
 schedulerTuner() {
@@ -2112,359 +2104,365 @@ for i in $blocks;
 }
 
 dnsOptimizationCloudFlare() {
-sendToLog "Activating DNS optimization..."
+	sendToLog "Activating DNS optimization..."
 
-iptables -t nat -A OUTPUT -p udp --dport 53 -j DNAT --to 1.0.0.1:53
-iptables -t nat -I OUTPUT -p udp --dport 53 -j DNAT --to 1.0.0.1:53
-iptables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to 1.1.1.1:53
-iptables -t nat -I OUTPUT -p tcp --dport 53 -j DNAT --to 1.1.1.1:53
-ip6tables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to  2606:4700:4700::1111
-ip6tables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to  2606:4700:4700::1001
-ip6tables -t nat -I OUTPUT -p tcp --dport 53 -j DNAT --to  2606:4700:4700::1111
-ip6tables -t nat -I OUTPUT -p udp --dport 53 -j DNAT --to  2606:4700:4700::1001
+	iptables -t nat -A OUTPUT -p udp --dport 53 -j DNAT --to 1.0.0.1:53
+	iptables -t nat -I OUTPUT -p udp --dport 53 -j DNAT --to 1.0.0.1:53
+	iptables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to 1.1.1.1:53
+	iptables -t nat -I OUTPUT -p tcp --dport 53 -j DNAT --to 1.1.1.1:53
+	ip6tables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to  2606:4700:4700::1111
+	ip6tables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to  2606:4700:4700::1001
+	ip6tables -t nat -I OUTPUT -p tcp --dport 53 -j DNAT --to  2606:4700:4700::1111
+	ip6tables -t nat -I OUTPUT -p udp --dport 53 -j DNAT --to  2606:4700:4700::1001
 
-setprop net.eth0.dns1 1.1.1.1
-setprop net.eth0.dns2 1.0.0.1
-setprop net.dns1 1.1.1.1
-setprop net.dns2 1.0.0.1
-setprop net.ppp0.dns1 1.1.1.1
-setprop net.ppp0.dns2 1.0.0.1
-setprop net.rmnet0.dns1 1.1.1.1
-setprop net.rmnet0.dns2 1.0.0.1
-setprop net.rmnet1.dns1 1.1.1.1
-setprop net.rmnet1.dns2 1.0.0.1
-setprop net.rmnet2.dns1 1.1.1.1
-setprop net.rmnet2.dns2 1.0.0.1
-setprop net.pdpbr1.dns1 1.1.1.1
-setprop net.pdpbr1.dns2 1.0.0.1
-setprop net.wlan0.dns1 1.1.1.1
-setprop net.wlan0.dns2 1.0.0.1
-setprop 2606:4700:4700::1111
-setprop 2606:4700:4700::1001
+	setprop net.eth0.dns1 1.1.1.1
+	setprop net.eth0.dns2 1.0.0.1
+	setprop net.dns1 1.1.1.1
+	setprop net.dns2 1.0.0.1
+	setprop net.ppp0.dns1 1.1.1.1
+	setprop net.ppp0.dns2 1.0.0.1
+	setprop net.rmnet0.dns1 1.1.1.1
+	setprop net.rmnet0.dns2 1.0.0.1
+	setprop net.rmnet1.dns1 1.1.1.1
+	setprop net.rmnet1.dns2 1.0.0.1
+	setprop net.rmnet2.dns1 1.1.1.1
+	setprop net.rmnet2.dns2 1.0.0.1
+	setprop net.pdpbr1.dns1 1.1.1.1
+	setprop net.pdpbr1.dns2 1.0.0.1
+	setprop net.wlan0.dns1 1.1.1.1
+	setprop net.wlan0.dns2 1.0.0.1
+	setprop 2606:4700:4700::1111
+	setprop 2606:4700:4700::1001
 
-sendToLog "Changing DNS to CloudFlare"
+	sendToLog "Changing DNS to CloudFlare"
 
-sendToLog "DNS optimization is activated"
-sendToLog "$divider";
+	sendToLog "DNS optimization is activated"
+	sendToLog "$divider";
 }
 
 dnsOptimizationGooglePublic() {
-sendToLog "Activating DNS optimization..."
+	sendToLog "Activating DNS optimization..."
 
-iptables -t nat -A OUTPUT -p udp --dport 53 -j DNAT --to 8.8.8.8:53
-iptables -t nat -I OUTPUT -p udp --dport 53 -j DNAT --to 8.8.4.4:53
-iptables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to 8.8.8.8:53
-iptables -t nat -I OUTPUT -p tcp --dport 53 -j DNAT --to 8.8.4.4:53
-ip6tables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to 2001:4860:4860:8888
-ip6tables -t nat -I OUTPUT -p tcp --dport 53 -j DNAT --to 2001:4860:4860:8888
-ip6tables -t nat -A OUTPUT -p udp --dport 53 -j DNAT --to 2001:4860:4860:8844
-ip6tables -t nat -I OUTPUT -p udp --dport 53 -j DNAT --to 2001:4860:4860:8844
+	iptables -t nat -A OUTPUT -p udp --dport 53 -j DNAT --to 8.8.8.8:53
+	iptables -t nat -I OUTPUT -p udp --dport 53 -j DNAT --to 8.8.4.4:53
+	iptables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to 8.8.8.8:53
+	iptables -t nat -I OUTPUT -p tcp --dport 53 -j DNAT --to 8.8.4.4:53
+	ip6tables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to 2001:4860:4860:8888
+	ip6tables -t nat -I OUTPUT -p tcp --dport 53 -j DNAT --to 2001:4860:4860:8888
+	ip6tables -t nat -A OUTPUT -p udp --dport 53 -j DNAT --to 2001:4860:4860:8844
+	ip6tables -t nat -I OUTPUT -p udp --dport 53 -j DNAT --to 2001:4860:4860:8844
 
-setprop net.eth0.dns1 8.8.8.8
-setprop net.eth0.dns2 8.8.4.4
-setprop net.dns1 8.8.8.8
-setprop net.dns2 8.8.4.4
-setprop net.ppp0.dns1 8.8.8.8
-setprop net.ppp0.dns2 8.8.4.4
-setprop net.rmnet0.dns1 8.8.8.8
-setprop net.rmnet0.dns2 8.8.4.4
-setprop net.rmnet1.dns1 8.8.8.8
-setprop net.rmnet1.dns2 8.8.4.4
-setprop net.rmnet2.dns1 8.8.8.8
-setprop net.rmnet2.dns2 8.8.4.4
-setprop net.pdpbr1.dns1 8.8.8.8
-setprop net.pdpbr1.dns2 8.8.4.4
-setprop net.wlan0.dns1 8.8.8.8
-setprop net.wlan0.dns2 8.8.4.4
-setprop 2001:4860:4860::8888
-setprop 2001:4860:4860::8844
+	setprop net.eth0.dns1 8.8.8.8
+	setprop net.eth0.dns2 8.8.4.4
+	setprop net.dns1 8.8.8.8
+	setprop net.dns2 8.8.4.4
+	setprop net.ppp0.dns1 8.8.8.8
+	setprop net.ppp0.dns2 8.8.4.4
+	setprop net.rmnet0.dns1 8.8.8.8
+	setprop net.rmnet0.dns2 8.8.4.4
+	setprop net.rmnet1.dns1 8.8.8.8
+	setprop net.rmnet1.dns2 8.8.4.4
+	setprop net.rmnet2.dns1 8.8.8.8
+	setprop net.rmnet2.dns2 8.8.4.4
+	setprop net.pdpbr1.dns1 8.8.8.8
+	setprop net.pdpbr1.dns2 8.8.4.4
+	setprop net.wlan0.dns1 8.8.8.8
+	setprop net.wlan0.dns2 8.8.4.4
+	setprop 2001:4860:4860::8888
+	setprop 2001:4860:4860::8844
 
-sendToLog "Changing DNS to Google Public"
+	sendToLog "Changing DNS to Google Public"
 
-sendToLog "DNS optimization is activated"
-sendToLog "$divider";
+	sendToLog "DNS optimization is activated"
+	sendToLog "$divider";
 }
 
 netBuffersBig() {
-sendToLog "Activating big net buffers..."
+	sendToLog "Activating big net buffers..."
 
-# Define TCP buffer sizes for various networks
-# ReadMin, ReadInitial, ReadMax, WriteMin, WriteInitial, WriteMax
-setprop net.tcp.buffersize.default 6144,87380,1048576,6144,87380,524288
-setprop net.tcp.buffersize.wifi 524288,1048576,2097152,524288,1048576,2097152
-setprop net.tcp.buffersize.umts 6144,87380,1048576,6144,87380,524288
-setprop net.tcp.buffersize.gprs 6144,87380,1048576,6144,87380,524288
-setprop net.tcp.buffersize.edge 6144,87380,524288,6144,16384,262144
-setprop net.tcp.buffersize.hspa 6144,87380,524288,6144,16384,262144
-setprop net.tcp.buffersize.lte 524288,1048576,2097152,524288,1048576,2097152
-setprop net.tcp.buffersize.hsdpa 6144,87380,1048576,6144,87380,1048576
-setprop net.tcp.buffersize.evdo_b 6144,87380,1048576,6144,87380,1048576
+	# Define TCP buffer sizes for various networks
+	# ReadMin, ReadInitial, ReadMax, WriteMin, WriteInitial, WriteMax
+	setprop net.tcp.buffersize.default 6144,87380,1048576,6144,87380,524288
+	setprop net.tcp.buffersize.wifi 524288,1048576,2097152,524288,1048576,2097152
+	setprop net.tcp.buffersize.umts 6144,87380,1048576,6144,87380,524288
+	setprop net.tcp.buffersize.gprs 6144,87380,1048576,6144,87380,524288
+	setprop net.tcp.buffersize.edge 6144,87380,524288,6144,16384,262144
+	setprop net.tcp.buffersize.hspa 6144,87380,524288,6144,16384,262144
+	setprop net.tcp.buffersize.lte 524288,1048576,2097152,524288,1048576,2097152
+	setprop net.tcp.buffersize.hsdpa 6144,87380,1048576,6144,87380,1048576
+	setprop net.tcp.buffersize.evdo_b 6144,87380,1048576,6144,87380,1048576
 
-sendToLog "Big net buffers activated"
-sendToLog "$divider";
+	sendToLog "Big net buffers activated"
+	sendToLog "$divider";
 }
 
 netBuffersSmall() {
-sendToLog "Activating small net buffers..."
+	sendToLog "Activating small net buffers..."
 
-# Define TCP buffer sizes for various networks
-# ReadMin, ReadInitial, ReadMax, WriteMin, WriteInitial, WriteMax
-setprop net.tcp.buffersize.hspa 4096,32768,65536,4096,32768,65536
-setprop net.tcp.buffersize.umts 4096,32768,65536,4096,32768,65536
-setprop net.tcp.buffersize.edge 4096,32768,65536,4096,32768,65536
-setprop net.tcp.buffersize.gprs 4096,32768,65536,4096,32768,65536
-setprop net.tcp.buffersize.hsdpa 4096,32768,65536,4096,32768,65536
-setprop net.tcp.buffersize.wifi 4096,32768,65536,4096,32768,65536
-setprop net.tcp.buffersize.evdo_b 4096,32768,65536,4096,32768,65536
-setprop net.tcp.buffersize.lte 4096,32768,65536,4096,32768,65536
-setprop net.tcp.buffersize.default 4096,32768,12582912,4096,32768,12582912
+	# Define TCP buffer sizes for various networks
+	# ReadMin, ReadInitial, ReadMax, WriteMin, WriteInitial, WriteMax
+	setprop net.tcp.buffersize.hspa 4096,32768,65536,4096,32768,65536
+	setprop net.tcp.buffersize.umts 4096,32768,65536,4096,32768,65536
+	setprop net.tcp.buffersize.edge 4096,32768,65536,4096,32768,65536
+	setprop net.tcp.buffersize.gprs 4096,32768,65536,4096,32768,65536
+	setprop net.tcp.buffersize.hsdpa 4096,32768,65536,4096,32768,65536
+	setprop net.tcp.buffersize.wifi 4096,32768,65536,4096,32768,65536
+	setprop net.tcp.buffersize.evdo_b 4096,32768,65536,4096,32768,65536
+	setprop net.tcp.buffersize.lte 4096,32768,65536,4096,32768,65536
+	setprop net.tcp.buffersize.default 4096,32768,12582912,4096,32768,12582912
 
-sendToLog "Small net buffers activated"
-sendToLog "$divider";
+	sendToLog "Small net buffers activated"
+	sendToLog "$divider";
 }
 
 netSpeedPlus() {
-sendToLog "Activating Net Speed+..."
+	sendToLog "Activating Net Speed+..."
 
-net=$($BUSYBOX ls -d /sys/class/net/*);
-for i in $net; do
-	if [ -e "$i"/tx_queue_len ]; then
-		write "$i"/tx_queue_len "128"
-		sendToLog "tx_queue_len=128 in $i";
-	fi
-done
+	net=$($BUSYBOX ls -d /sys/class/net/*);
+	for i in $net; do
+		if [ -e "$i"/tx_queue_len ]; then
+			write "$i"/tx_queue_len "128"
+			sendToLog "tx_queue_len=128 in $i";
+		fi
+	done
 
-#for i in $(ls /sys/class/net); do
-#echo "1500" > /sys/class/net/"$i"/mtu
-#echo "mtu=1500 in $i" >> $LOG;
-#done
+	#for i in $(ls /sys/class/net); do
+	#echo "1500" > /sys/class/net/"$i"/mtu
+	#echo "mtu=1500 in $i" >> $LOG;
+	#done
 
-sendToLog "Net Speed+ activated"
-sendToLog "$divider";
+	sendToLog "Net Speed+ activated"
+	sendToLog "$divider";
 }
 
 netTcpTweaks() {
-sendToLog "Activating TCP tweak..."
+	sendToLog "Activating TCP tweak..."
 
-#echo "128" > /proc/sys/net/core/netdev_max_backlog
-#echo "0" > /proc/sys/net/core/netdev_tstamp_prequeue
-#echo "0" > /proc/sys/net/ipv4/cipso_cache_bucket_size
-#echo "0" > /proc/sys/net/ipv4/cipso_cache_enable
-#echo "0" > /proc/sys/net/ipv4/cipso_rbm_strictvalid
-#echo "0" > /proc/sys/net/ipv4/igmp_link_local_mcast_reports
-#echo "24" > /proc/sys/net/ipv4/ipfrag_time
-#echo "1" > /proc/sys/net/ipv4/tcp_ecn
-#echo "0" > /proc/sys/net/ipv4/tcp_fwmark_accept
-#echo "320" > /proc/sys/net/ipv4/tcp_keepalive_intvl
-#echo "21600" > /proc/sys/net/ipv4/tcp_keepalive_time
-#echo "1" > /proc/sys/net/ipv4/tcp_no_metrics_save
-#echo "1800" > /proc/sys/net/ipv4/tcp_probe_interval
-#echo "0" > /proc/sys/net/ipv4/tcp_slow_start_after_idle
-#echo "48" > /proc/sys/net/ipv6/ip6frag_time
+	#echo "128" > /proc/sys/net/core/netdev_max_backlog
+	#echo "0" > /proc/sys/net/core/netdev_tstamp_prequeue
+	#echo "0" > /proc/sys/net/ipv4/cipso_cache_bucket_size
+	#echo "0" > /proc/sys/net/ipv4/cipso_cache_enable
+	#echo "0" > /proc/sys/net/ipv4/cipso_rbm_strictvalid
+	#echo "0" > /proc/sys/net/ipv4/igmp_link_local_mcast_reports
+	#echo "24" > /proc/sys/net/ipv4/ipfrag_time
+	#echo "1" > /proc/sys/net/ipv4/tcp_ecn
+	#echo "0" > /proc/sys/net/ipv4/tcp_fwmark_accept
+	#echo "320" > /proc/sys/net/ipv4/tcp_keepalive_intvl
+	#echo "21600" > /proc/sys/net/ipv4/tcp_keepalive_time
+	#echo "1" > /proc/sys/net/ipv4/tcp_no_metrics_save
+	#echo "1800" > /proc/sys/net/ipv4/tcp_probe_interval
+	#echo "0" > /proc/sys/net/ipv4/tcp_slow_start_after_idle
+	#echo "48" > /proc/sys/net/ipv6/ip6frag_time
 
-echo "0" > /proc/sys/net/ipv4/conf/default/secure_redirects
-echo "0" > /proc/sys/net/ipv4/conf/default/accept_redirects
-echo "0" > /proc/sys/net/ipv4/conf/default/accept_source_route
-echo "0" > /proc/sys/net/ipv4/conf/all/secure_redirects
-echo "0" > /proc/sys/net/ipv4/conf/all/accept_redirects
-echo "0" > /proc/sys/net/ipv4/conf/all/accept_source_route
-echo "0" > /proc/sys/net/ipv4/ip_forward
-echo "0" > /proc/sys/net/ipv4/ip_dynaddr
-echo "0" > /proc/sys/net/ipv4/ip_no_pmtu_disc
-echo "0" > /proc/sys/net/ipv4/tcp_ecn
-echo "0" > /proc/sys/net/ipv4/tcp_timestamps
-echo "1" > /proc/sys/net/ipv4/tcp_tw_reuse
-echo "1" > /proc/sys/net/ipv4/tcp_fack
-echo "1" > /proc/sys/net/ipv4/tcp_sack
-echo "1" > /proc/sys/net/ipv4/tcp_dsack
-echo "1" > /proc/sys/net/ipv4/tcp_rfc1337
-echo "1" > /proc/sys/net/ipv4/tcp_tw_recycle
-echo "1" > /proc/sys/net/ipv4/tcp_window_scaling
-echo "1" > /proc/sys/net/ipv4/tcp_moderate_rcvbuf
-echo "1" > /proc/sys/net/ipv4/tcp_no_metrics_save
-echo "2" > /proc/sys/net/ipv4/tcp_synack_retries
-echo "2" > /proc/sys/net/ipv4/tcp_syn_retries
-echo "5" > /proc/sys/net/ipv4/tcp_keepalive_probes
-echo "30" > /proc/sys/net/ipv4/tcp_keepalive_intvl
-echo "30" > /proc/sys/net/ipv4/tcp_fin_timeout
-echo "1800" > /proc/sys/net/ipv4/tcp_keepalive_time
-echo "261120" > /proc/sys/net/core/rmem_max
-echo "261120" > /proc/sys/net/core/wmem_max
-echo "261120" > /proc/sys/net/core/rmem_default
-echo "261120" > /proc/sys/net/core/wmem_default
+	echo "0" > /proc/sys/net/ipv4/conf/default/secure_redirects
+	echo "0" > /proc/sys/net/ipv4/conf/default/accept_redirects
+	echo "0" > /proc/sys/net/ipv4/conf/default/accept_source_route
+	echo "0" > /proc/sys/net/ipv4/conf/all/secure_redirects
+	echo "0" > /proc/sys/net/ipv4/conf/all/accept_redirects
+	echo "0" > /proc/sys/net/ipv4/conf/all/accept_source_route
+	echo "0" > /proc/sys/net/ipv4/ip_forward
+	echo "0" > /proc/sys/net/ipv4/ip_dynaddr
+	echo "0" > /proc/sys/net/ipv4/ip_no_pmtu_disc
+	echo "0" > /proc/sys/net/ipv4/tcp_ecn
+	echo "0" > /proc/sys/net/ipv4/tcp_timestamps
+	echo "1" > /proc/sys/net/ipv4/tcp_tw_reuse
+	echo "1" > /proc/sys/net/ipv4/tcp_fack
+	echo "1" > /proc/sys/net/ipv4/tcp_sack
+	echo "1" > /proc/sys/net/ipv4/tcp_dsack
+	echo "1" > /proc/sys/net/ipv4/tcp_rfc1337
+	echo "1" > /proc/sys/net/ipv4/tcp_tw_recycle
+	echo "1" > /proc/sys/net/ipv4/tcp_window_scaling
+	echo "1" > /proc/sys/net/ipv4/tcp_moderate_rcvbuf
+	echo "1" > /proc/sys/net/ipv4/tcp_no_metrics_save
+	echo "2" > /proc/sys/net/ipv4/tcp_synack_retries
+	echo "2" > /proc/sys/net/ipv4/tcp_syn_retries
+	echo "5" > /proc/sys/net/ipv4/tcp_keepalive_probes
+	echo "30" > /proc/sys/net/ipv4/tcp_keepalive_intvl
+	echo "30" > /proc/sys/net/ipv4/tcp_fin_timeout
+	echo "1800" > /proc/sys/net/ipv4/tcp_keepalive_time
+	echo "261120" > /proc/sys/net/core/rmem_max
+	echo "261120" > /proc/sys/net/core/wmem_max
+	echo "261120" > /proc/sys/net/core/rmem_default
+	echo "261120" > /proc/sys/net/core/wmem_default
 
-sendToLog "TCP tweak activated"
-sendToLog "$divider";
+	sendToLog "TCP tweak activated"
+	sendToLog "$divider";
 }
 
 rilTweaks() {
-sendToLog "Activating ril tweaks..."
+	sendToLog "Activating ril tweaks..."
 
-resetprop ro.ril.gprsclass 12
-sendToLog "GPRS Class changed to 12"
+	resetprop ro.ril.gprsclass 12
+	sendToLog "GPRS Class changed to 12"
 
-resetprop ro.ril.hsdpa.category 28
-sendToLog "hsdpa category changed to 28"
+	resetprop ro.ril.hsdpa.category 28
+	sendToLog "hsdpa category changed to 28"
 
-resetprop ro.ril.hsupa.category 7
-sendToLog "hsupa category changed to 7"
+	resetprop ro.ril.hsupa.category 7
+	sendToLog "hsupa category changed to 7"
 
-resetprop ro.telephony.call_ring.delay 1500
-sendToLog "RING/CRING event delay reduced to 1.5sec"
+	resetprop ro.telephony.call_ring.delay 1500
+	sendToLog "RING/CRING event delay reduced to 1.5sec"
 
-resetprop ro.telephony.call_ring.multiple false
-sendToLog "Ril sends only one RIL_UNSOL_CALL_RING, so set call_ring.multiple to false"
+	resetprop ro.telephony.call_ring.multiple false
+	sendToLog "Ril sends only one RIL_UNSOL_CALL_RING, so set call_ring.multiple to false"
 
-sendToLog "Ril tweaks are activated"
-sendToLog "$divider";
+	sendToLog "Ril tweaks are activated"
+	sendToLog "$divider";
 }
 
 disableDebugging() {
-sendToLog "Powerful logging disable started..."
+	sendToLog "Powerful logging disable started..."
 
-$BUSYBOX find /sys -name debug_mask |
-while read -r fileName
-	do
-		write "$fileName" "0"
-		sendToLog "Disabled debugging for $fileName"  
-done
+	$BUSYBOX find /sys -name debug_mask |
+	while read -r fileName
+		do
+			write "$fileName" "0"
+			sendToLog "Disabled debugging for $fileName"  
+	done
 
-$BUSYBOX find /sys -name debug |
-while read -r fileName
-	do
-		write "$fileName" "0"
-		sendToLog "Disabled debugging for $fileName"  
-done
+	$BUSYBOX find /sys -name debug |
+	while read -r fileName
+		do
+			write "$fileName" "0"
+			sendToLog "Disabled debugging for $fileName"  
+	done
 
-$BUSYBOX find /sys -name debug_enabled |
-while read -r fileName
-	do
-		write "$fileName" "0"
-		sendToLog "Disabled debugging for $fileName"  
-done
+	$BUSYBOX find /sys -name debug_enabled |
+	while read -r fileName
+		do
+			write "$fileName" "0"
+			sendToLog "Disabled debugging for $fileName"  
+	done
 
-$BUSYBOX find /sys -name debug_level |
-while read -r fileName
-	do
-		write "$fileName" "0"
-		sendToLog "Disabled debugging for $fileName"  
-done
+	$BUSYBOX find /sys -name debug_level |
+	while read -r fileName
+		do
+			write "$fileName" "0"
+			sendToLog "Disabled debugging for $fileName"  
+	done
 
-$BUSYBOX find /sys -name edac_mc_log_ce |
-while read -r fileName
-	do
-		write "$fileName" "0"
-		sendToLog "Disabled debugging for $fileName"  
-done
+	$BUSYBOX find /sys -name edac_mc_log_ce |
+	while read -r fileName
+		do
+			write "$fileName" "0"
+			sendToLog "Disabled debugging for $fileName"  
+	done
 
-$BUSYBOX find /sys -name edac_mc_log_ue |
-while read -r fileName
-	do
-		write "$fileName" "0"
-		sendToLog "Disabled debugging for $fileName"  
-done
+	$BUSYBOX find /sys -name edac_mc_log_ue |
+	while read -r fileName
+		do
+			write "$fileName" "0"
+			sendToLog "Disabled debugging for $fileName"  
+	done
 
-find /sys -name enable_event_log |
-while read -r fileName
-	do
-		write "$fileName" "0"
-		sendToLog "Disabled debugging for $fileName"  
-done
+	find /sys -name enable_event_log |
+	while read -r fileName
+		do
+			write "$fileName" "0"
+			sendToLog "Disabled debugging for $fileName"  
+	done
 
-$BUSYBOX find /sys -name log_ecn_error |
-while read -r fileName
-	do
-		write "$fileName" "0"
-		sendToLog "Disabled debugging for $fileName"  
-done
+	$BUSYBOX find /sys -name log_ecn_error |
+	while read -r fileName
+		do
+			write "$fileName" "0"
+			sendToLog "Disabled debugging for $fileName"  
+	done
 
-$BUSYBOX find /sys -name snapshot_crashdumper |
-while read -r fileName
-	do
-		write "$fileName" "0"
-		sendToLog "Disabled debugging for $fileName"  
-done
+	$BUSYBOX find /sys -name snapshot_crashdumper |
+	while read -r fileName
+		do
+			write "$fileName" "0"
+			sendToLog "Disabled debugging for $fileName"  
+	done
 
-console_suspend=/sys/module/printk/parameters/console_suspend
-if [ -e $console_suspend ]; then
-	write $console_suspend "Y"
-	sendToLog "Console suspended"
-fi;
+	sched_schedstats=/proc/sys/kernel/sched_schedstats
+	if [ -e $sched_schedstats ]; then
+		write $sched_schedstats "0"
+		sendToLog "Disabled sched_schedstats"
+	fi;
 
-log_mode=/sys/module/logger/parameters/log_mode
-if [ -e $log_mode ]; then
-	write $log_mode "2"
-	sendToLog "Logger disabled"
-fi;
+	console_suspend=/sys/module/printk/parameters/console_suspend
+	if [ -e $console_suspend ]; then
+		write $console_suspend "Y"
+		sendToLog "Console suspended"
+	fi;
 
-debug_enabled=/sys/kernel/debug/debug_enabled
-if [ -e $debug_enabled ]; then
-	write $debug_enabled "N"
-	sendToLog "Disabled kernel debugging"
-fi;
+	log_mode=/sys/module/logger/parameters/log_mode
+	if [ -e $log_mode ]; then
+		write $log_mode "2"
+		sendToLog "Logger disabled"
+	fi;
 
-exception_trace=/proc/sys/debug/exception-trace
-if [ -e "$exception_trace" ]; then
-	write $exception_trace "0"
-	sendToLog "Disabled exception-trace debugger"
-fi;
+	debug_enabled=/sys/kernel/debug/debug_enabled
+	if [ -e $debug_enabled ]; then
+		write $debug_enabled "N"
+		sendToLog "Disabled kernel debugging"
+	fi;
 
-mali_debug_level=/sys/module/mali/parameters/mali_debug_level
-if [ -e $mali_debug_level ]; then
-	write $mali_debug_level "0"
-	sendToLog "Disabled mali GPU debugging"
-fi;
+	exception_trace=/proc/sys/debug/exception-trace
+	if [ -e "$exception_trace" ]; then
+		write $exception_trace "0"
+		sendToLog "Disabled exception-trace debugger"
+	fi;
 
-block_dump=/proc/sys/vm/block_dump
-if [ -e $block_dump ]; then
-	write $block_dump "0"
-	sendToLog "Disabled I/O block debugging"
-fi;
+	mali_debug_level=/sys/module/mali/parameters/mali_debug_level
+	if [ -e $mali_debug_level ]; then
+		write $mali_debug_level "0"
+		sendToLog "Disabled mali GPU debugging"
+	fi;
 
-mballoc_debug=/sys/module/ext4/parameters/mballoc_debug
-if [ -e $mballoc_debug ]; then
-	write $mballoc_debug "0"
-	sendToLog "Disabled ext4 runtime debugging"
-fi;
+	block_dump=/proc/sys/vm/block_dump
+	if [ -e $block_dump ]; then
+		write $block_dump "0"
+		sendToLog "Disabled I/O block debugging"
+	fi;
 
-logger_mode=/sys/kernel/logger_mode/logger_mode
-if [ -e $logger_mode ]; then
-	write $logger_mode "0"
-	sendToLog "Disabled $logger_mode"
-fi;
+	mballoc_debug=/sys/module/ext4/parameters/mballoc_debug
+	if [ -e $mballoc_debug ]; then
+		write $mballoc_debug "0"
+		sendToLog "Disabled ext4 runtime debugging"
+	fi;
 
-log_enabled=/sys/module/logger/parameters/log_enabled
-if [ -e $log_enabled ]; then
-	write $log_enabled "0"
-	sendToLog "Disabled $log_enabled"
-fi;
+	logger_mode=/sys/kernel/logger_mode/logger_mode
+	if [ -e $logger_mode ]; then
+		write $logger_mode "0"
+		sendToLog "Disabled $logger_mode"
+	fi;
 
-logger_enabled=/sys/module/logger/parameters/enabled
-if [ -e $logger_enabled ]; then
-	write $logger_enabled "0"
-	sendToLog "Disabled $logger_enabled"
-fi;
+	log_enabled=/sys/module/logger/parameters/log_enabled
+	if [ -e $log_enabled ]; then
+		write $log_enabled "0"
+		sendToLog "Disabled $log_enabled"
+	fi;
 
-compat_log=/proc/sys/kernel/compat-log
-if [ -e $compat_log ]; then
-	write $compat_log "0"
-	sendToLog "Compat logging disabled"
-fi;
+	logger_enabled=/sys/module/logger/parameters/enabled
+	if [ -e $logger_enabled ]; then
+		write $logger_enabled "0"
+		sendToLog "Disabled $logger_enabled"
+	fi;
 
-disable_ertm=/sys/module/bluetooth/parameters/disable_ertm
-if [ -e $disable_ertm ]; then
-	write $disable_ertm "0"
-	sendToLog "Bluetooth ertm disabled"
-fi;
+	compat_log=/proc/sys/kernel/compat-log
+	if [ -e $compat_log ]; then
+		write $compat_log "0"
+		sendToLog "Compat logging disabled"
+	fi;
 
-disable_esco=/sys/module/bluetooth/parameters/disable_esco
-if [ -e $disable_esco ]; then
-	write $disable_esco "0"
-	sendToLog "Bluetooth esco is disabled"
-fi;
+	disable_ertm=/sys/module/bluetooth/parameters/disable_ertm
+	if [ -e $disable_ertm ]; then
+		write $disable_ertm "0"
+		sendToLog "Bluetooth ertm disabled"
+	fi;
 
-sendToLog "Logging disabled..."
-sendToLog "$divider";
+	disable_esco=/sys/module/bluetooth/parameters/disable_esco
+	if [ -e $disable_esco ]; then
+		write $disable_esco "0"
+		sendToLog "Bluetooth esco is disabled"
+	fi;
+
+	sendToLog "Logging disabled..."
+	sendToLog "$divider";
 }
 
 disableKernelPanic() {
@@ -2500,79 +2498,79 @@ selinux() {
 }
 
 disableMultitaskingLimitations() {
-sendToLog "Disabling multitasking limitations..."
+	sendToLog "Disabling multitasking limitations..."
 
-setprop MIN_HIDDEN_APPS false
-sendToLog "MIN_HIDDEN_APPS=false"
+	setprop MIN_HIDDEN_APPS false
+	sendToLog "MIN_HIDDEN_APPS=false"
 
-setprop ACTIVITY_INACTIVE_RESET_TIME false
-sendToLog "ACTIVITY_INACTIVE_RESET_TIME=false"
+	setprop ACTIVITY_INACTIVE_RESET_TIME false
+	sendToLog "ACTIVITY_INACTIVE_RESET_TIME=false"
 
-setprop MIN_RECENT_TASKS false
-sendToLog "MIN_RECENT_TASKS=false"
+	setprop MIN_RECENT_TASKS false
+	sendToLog "MIN_RECENT_TASKS=false"
 
-setprop PROC_START_TIMEOUT false
-sendToLog "PROC_START_TIMEOUT=false"
+	setprop PROC_START_TIMEOUT false
+	sendToLog "PROC_START_TIMEOUT=false"
 
-setprop CPU_MIN_CHECK_DURATION false
-sendToLog "CPU_MIN_CHECK_DURATION=false"
+	setprop CPU_MIN_CHECK_DURATION false
+	sendToLog "CPU_MIN_CHECK_DURATION=false"
 
-setprop GC_TIMEOUT false
-sendToLog "GC_TIMEOUT=false"
+	setprop GC_TIMEOUT false
+	sendToLog "GC_TIMEOUT=false"
 
-setprop SERVICE_TIMEOUT false
-sendToLog "SERVICE_TIMEOUT=false"
+	setprop SERVICE_TIMEOUT false
+	sendToLog "SERVICE_TIMEOUT=false"
 
-setprop MIN_CRASH_INTERVAL false
-sendToLog "MIN_CRASH_INTERVAL=false"
+	setprop MIN_CRASH_INTERVAL false
+	sendToLog "MIN_CRASH_INTERVAL=false"
 
-setprop ENFORCE_PROCESS_LIMIT false
-sendToLog "ENFORCE_PROCESS_LIMIT=false"
+	setprop ENFORCE_PROCESS_LIMIT false
+	sendToLog "ENFORCE_PROCESS_LIMIT=false"
 
-sendToLog "Multitasking limitations disabled"
-sendToLog "$divider";
+	sendToLog "Multitasking limitations disabled"
+	sendToLog "$divider";
 }
 
 lowRamFlagDisabled() {
-sendToLog "Disabling low RAM flag..."
+	sendToLog "Disabling low RAM flag..."
 
-resetprop ro.config.low_ram false
+	resetprop ro.config.low_ram false
 
-sendToLog "Low RAM flag disabled"
-sendToLog "$divider";
+	sendToLog "Low RAM flag disabled"
+	sendToLog "$divider";
 }
 
 lowRamFlagEnabled() {
-sendToLog "Enabling low RAM flag..."
+	sendToLog "Enabling low RAM flag..."
 
-resetprop ro.config.low_ram true
+	resetprop ro.config.low_ram true
 
-sendToLog "Low RAM flag enabled"
-sendToLog "$divider";
+	sendToLog "Low RAM flag enabled"
+	sendToLog "$divider";
 }
 
 oomKillerDisabled() {
-sendToLog "Disabled OOM killer..."
+	sendToLog "Disabled OOM killer..."
 
-oom_kill_allocating_task=/proc/sys/vm/oom_kill_allocating_task
-if [ -e $oom_kill_allocating_task ]; then
-	write $oom_kill_allocating_task "0"
-fi;
+	oom_kill_allocating_task=/proc/sys/vm/oom_kill_allocating_task
+	if [ -e $oom_kill_allocating_task ]; then
+		write $oom_kill_allocating_task "0"
+	fi;
 
-sendToLog "OOM killer disabled"
-sendToLog "$divider";
+	sendToLog "OOM killer disabled"
+	sendToLog "$divider";
 }
 
 oomKillerEnabled() {
-sendToLog "Enabling OOM killer..."
+	sendToLog "Enabling OOM killer..."
 
-oom_kill_allocating_task=/proc/sys/vm/oom_kill_allocating_task
-if [ -e $oom_kill_allocating_task ]; then
-	write $oom_kill_allocating_task "1"
-fi;
+	oom_kill_allocating_task=/proc/sys/vm/oom_kill_allocating_task
+	if [ -e $oom_kill_allocating_task ]; then
+		write $oom_kill_allocating_task "1"
+	fi;
 
-sendToLog "OOM killer enabled"
-sendToLog "$divider";
+	sendToLog "OOM killer enabled"
+	sendToLog "$divider";
 }
 
 ramManagerBalanced() {
@@ -3854,6 +3852,7 @@ runtime=$((end-start))
 sendToLog "Applying took $runtime seconds";
 sendToLog "Successfully applied $profile profile";
 sendToLog "$divider";
+write $IS_EXECUTED "true"
 
 exit 0
 fi
