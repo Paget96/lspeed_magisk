@@ -6,7 +6,4 @@
 # if Magisk change its mount point in the future
 MODDIR=${0%/*}
 
-chmod 0777 /system/etc/lspeed/binary/main_function
-sh /system/etc/lspeed/binary/main_function &
-
 exit 0

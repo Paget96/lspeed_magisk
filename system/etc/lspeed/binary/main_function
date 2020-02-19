@@ -1,8 +1,8 @@
 #!/system/bin/sh
 # L Speed tweak
 # Codename : lspeed
-version="v1.6.3";
-build_date=14-1-2020;
+version="v1.7";
+build_date=18-Feb-2020;
 # Developer : Paget96
 # Paypal : https://paypal.me/Paget96
 
@@ -22,22 +22,21 @@ build_date=14-1-2020;
 #PATHS #
 ########
 # Path where logs and setup is stored
-LSPEED_DATA_DIR=/data/lspeed
+LSPEED_DATA_DIR="$1"
 LOG_DIR=$LSPEED_DATA_DIR/log
 LOG=$LOG_DIR/main_log.log
 
 # Setup paths
+BINARY_DIR=$LSPEED_DATA_DIR/binary
 SETUP_DIR=$LSPEED_DATA_DIR/setup
 USER_PROFILE=$SETUP_DIR/user_profile
 PROFILE=$SETUP_DIR/profile
-IS_EXECUTED=$LSPEED_DATA_DIR/is_executed
 
 # Path for executables and busybox
-LSPEED=/system/etc/lspeed
-BINARY_DIR=$LSPEED/binary
 BUSYBOX=$BINARY_DIR/busybox
 CPU_DETECT=$BINARY_DIR/cpu_detect
 CPUSET_TUNER=$BINARY_DIR/cpuset_tuner
+GOVERNOR_TUNER=$BINARY_DIR/governor_tuner
 
 # cpu_detect output files
 CPU_DETECT_DATA_DIR=$SETUP_DIR/cpu_detect
@@ -47,8 +46,12 @@ MIN_MAX_FREQ=$CPU_DETECT_DATA_DIR/min_max_freq
 MIN_FREQ_LIST=$CPU_DETECT_DATA_DIR/min_freq_list
 MAX_FREQ_LIST=$CPU_DETECT_DATA_DIR/max_freq_list
 LOGICAL_CORE=$CPU_DETECT_DATA_DIR/logical_core
+AFFECTED_CPU=$CPU_DETECT_DATA_DIR/affected_cpu
 UNIQUE_FREQ=$CPU_DETECT_DATA_DIR/unique_freq
 CORE_GETTER=$CPU_DETECT_DATA_DIR/core_getter
+PRIME_CORES_COUNT=$CPU_DETECT_DATA_DIR/prime_cores_count
+BIG_CORES_COUNT=$CPU_DETECT_DATA_DIR/big_cores_count
+LITTLE_CORES_COUNT=$CPU_DETECT_DATA_DIR/little_cores_count
 
 # Variables
 memTotal=$($BUSYBOX free -m | $BUSYBOX awk '/^Mem:/{print $2}');
@@ -139,7 +142,7 @@ fi;
 # Remove old logs when running the script again
 # and create dir if not exists
 # This will be only executed if there are no arguments while executing
-if [ "$#" -eq 0 ]; then
+if [ "$#" -eq 1 ]; then
 	if [ -e $LOG ]; then
 		rm -rf $LOG
 	fi;
@@ -162,6 +165,11 @@ fi;
 if [ ! -d $USER_PROFILE ]; then
 	mkdir -p $USER_PROFILE
 fi;
+
+# Create cpu_detect dir if not exists
+if [ ! -d $CPU_DETECT_DATA_DIR ]; then
+	mkdir -p $CPU_DETECT_DATA_DIR
+fi;	
 
 # Store the PID
 write $LSPEED_DATA_DIR/main_function_PID $$
@@ -191,7 +199,6 @@ if [ -d $USER_PROFILE ]; then
 	createFile $USER_PROFILE/io_blocks_optimization
 	createFile $USER_PROFILE/io_extended_queue
 	createFile $USER_PROFILE/scheduler_tuner
-	createFile $USER_PROFILE/sd_tweak
 
 	# LNET tweaks section
 	createFile $USER_PROFILE/dns
@@ -220,7 +227,7 @@ fi;
 # this will be done only on boot or executed service with sh over terminal
 if [ "$#" -eq 0 ] || [ ! -e $LOG ]; then
 	sendToLog "L Speed finished with base setup";
-
+	
 	sendToLog "Starting with logging...";
 	sendToLog $divider;
 	sendToLog "Getting module info"
@@ -236,6 +243,747 @@ if [ "$#" -eq 0 ] || [ ! -e $LOG ]; then
 	sendToLog "RAM: $((memTotal))mb"
 	sendToLog $divider;
 fi
+
+
+#######
+# Method returns the numbers of CPU cores
+#######
+getCPUcoreCount() {
+	rm -rf $CPU_CORE_COUNT
+	rm -rf $REAL_CPU_CORE_COUNT
+	
+	real_cpu_cores=$($BUSYBOX ls /sys/devices/system/cpu | $BUSYBOX grep -c ^cpu[0-9]);
+	cpu_cores=$((real_cpu_cores-1));
+	
+	echo "$cpu_cores" > $CPU_CORE_COUNT
+	echo "$real_cpu_cores" > $REAL_CPU_CORE_COUNT
+	
+	sleep 0.5
+	
+	unset real_cpu_cores; unset cpu_cores;
+}
+
+#######
+# Method returns min and max frequencies as list
+#######
+getMinAndMaxFreq() {
+	rm -rf $MIN_MAX_FREQ
+	
+	core_count=$($BUSYBOX cat $CPU_CORE_COUNT)
+	core=0
+	while [ $core -le "$core_count" ]; do
+
+	scalingAvailableFrequencies=/sys/devices/system/cpu/cpu$core/cpufreq/scaling_available_frequencies
+	
+		if [ -e $scalingAvailableFrequencies ]; then
+			minFreq=$($BUSYBOX cat $scalingAvailableFrequencies | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $1}')
+			maxFreq=$($BUSYBOX cat $scalingAvailableFrequencies | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $NF}')
+
+			if [ "$minFreq" -lt "$maxFreq" ]; then
+				echo "$minFreq " >> $MIN_MAX_FREQ
+				echo "$maxFreq " >> $MIN_MAX_FREQ
+			elif [ "$minFreq" -gt "$maxFreq" ]; then
+				echo "$maxFreq " >> $MIN_MAX_FREQ
+				echo "$minFreq " >> $MIN_MAX_FREQ
+			fi
+		fi
+		
+		core=$(( core + 1 ))
+	done
+	
+	unset core; unset scalingAvailableFrequencies; unset minFreq; unset maxFreq;
+	
+	# This is for devices with mp-cpufreq dir
+	if [ ! -e /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_frequencies ]; then
+		rm -rf $MIN_MAX_FREQ
+		
+		cluster0FreqTable=/sys/devices/system/cpu/cpufreq/mp-cpufreq/cluster0_freq_table
+		cluster1FreqTable=/sys/devices/system/cpu/cpufreq/mp-cpufreq/cluster1_freq_table
+		cluster2FreqTable=/sys/devices/system/cpu/cpufreq/mp-cpufreq/cluster2_freq_table
+		kfcFreqTable=/sys/devices/system/cpu/cpufreq/mp-cpufreq/kfc_freq_table
+		cpuFreqTable=/sys/devices/system/cpu/cpufreq/mp-cpufreq/cpu_freq_table
+		
+		if [ -e $cluster0FreqTable ]; then
+			minFreq=$($BUSYBOX cat $cluster0FreqTable | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $1}')
+			maxFreq=$($BUSYBOX cat $cluster0FreqTable | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $NF}')
+
+			if [ "$minFreq" -lt "$maxFreq" ]; then
+				echo "$minFreq " >> $MIN_MAX_FREQ
+				echo "$maxFreq " >> $MIN_MAX_FREQ
+			elif [ "$minFreq" -gt "$maxFreq" ]; then
+				echo "$maxFreq " >> $MIN_MAX_FREQ
+				echo "$minFreq " >> $MIN_MAX_FREQ
+			fi
+		fi
+		unset minFreq; unset maxFreq;
+		
+		if [ -e $cluster1FreqTable ]; then
+			minFreq=$($BUSYBOX cat $cluster1FreqTable | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $1}')
+			maxFreq=$($BUSYBOX cat $cluster1FreqTable | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $NF}')
+
+			if [ "$minFreq" -lt "$maxFreq" ]; then
+				echo "$minFreq " >> $MIN_MAX_FREQ
+				echo "$maxFreq " >> $MIN_MAX_FREQ
+			elif [ "$minFreq" -gt "$maxFreq" ]; then
+				echo "$maxFreq " >> $MIN_MAX_FREQ
+				echo "$minFreq " >> $MIN_MAX_FREQ
+			fi
+		fi
+		unset minFreq; unset maxFreq;
+		
+		if [ -e $cluster2FreqTable ]; then
+			minFreq=$($BUSYBOX cat $cluster2FreqTable | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $1}')
+			maxFreq=$($BUSYBOX cat $cluster2FreqTable | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $NF}')
+
+			if [ "$minFreq" -lt "$maxFreq" ]; then
+				echo "$minFreq " >> $MIN_MAX_FREQ
+				echo "$maxFreq " >> $MIN_MAX_FREQ
+			elif [ "$minFreq" -gt "$maxFreq" ]; then
+				echo "$maxFreq " >> $MIN_MAX_FREQ
+				echo "$minFreq " >> $MIN_MAX_FREQ
+			fi
+		fi
+		unset minFreq; unset maxFreq;
+		
+		if [ -e $kfcFreqTable ]; then
+			minFreq=$($BUSYBOX cat $kfcFreqTable | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $1}')
+			maxFreq=$($BUSYBOX cat $kfcFreqTable | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $NF}')
+
+			if [ "$minFreq" -lt "$maxFreq" ]; then
+				echo "$minFreq " >> $MIN_MAX_FREQ
+				echo "$maxFreq " >> $MIN_MAX_FREQ
+			elif [ "$minFreq" -gt "$maxFreq" ]; then
+				echo "$maxFreq " >> $MIN_MAX_FREQ
+				echo "$minFreq " >> $MIN_MAX_FREQ
+			fi
+		fi
+		unset minFreq; unset maxFreq;
+		
+		if [ -e $cpuFreqTable ]; then
+			minFreq=$($BUSYBOX cat $cpuFreqTable | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $1}')
+			maxFreq=$($BUSYBOX cat $cpuFreqTable | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $NF}')
+
+			if [ "$minFreq" -lt "$maxFreq" ]; then
+				echo "$minFreq " >> $MIN_MAX_FREQ
+				echo "$maxFreq " >> $MIN_MAX_FREQ
+			elif [ "$minFreq" -gt "$maxFreq" ]; then
+				echo "$maxFreq " >> $MIN_MAX_FREQ
+				echo "$minFreq " >> $MIN_MAX_FREQ
+			fi
+		fi
+		unset minFreq; unset maxFreq;
+	fi
+	
+	sleep 0.5
+	
+	unset cluster0FreqTable; unset cluster1FreqTable; unset cluster2FreqTable; unset kfcFreqTable; unset cpuFreqTable;
+}
+
+#######
+# Method returns Min frequency of LITTLE, BIG and PRIME cores,
+# also REGULAR frequency in a list taking min_max_freq list as argument
+#######
+getMinFreqList() {
+	rm -rf $MIN_FREQ_LIST
+	
+	minMaxFreqSize=$($BUSYBOX cat $MIN_MAX_FREQ | $BUSYBOX tr '\n' ' ' | $BUSYBOX wc -w)
+
+	i=1
+	while [ $i -le "$minMaxFreqSize" ]; do
+		
+		minFreqList=$($BUSYBOX cat $MIN_MAX_FREQ | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $'$i'}')
+
+		echo "$minFreqList " >> $MIN_FREQ_LIST
+
+		i=$(( i + 2 ))
+	done
+
+	sleep 0.5
+
+	unset minMaxFreqSize; unset i; unset minFreqList;
+}
+
+#######
+# Method returns Max frequency of LITTLE, BIG and PRIME cores,
+# also REGULAR frequency in a list taking min_max_freq list as argument
+#######
+getMaxFreqList() {
+	rm -rf $MAX_FREQ_LIST
+	
+	minMaxFreqSize=$($BUSYBOX cat $MIN_MAX_FREQ | $BUSYBOX tr '\n' ' ' | $BUSYBOX wc -w)
+
+	i=2
+	while [ $i -le "$minMaxFreqSize" ]; do
+		
+		maxFreqList=$($BUSYBOX cat $MIN_MAX_FREQ | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $'$i'}')
+
+		echo "$maxFreqList " >> $MAX_FREQ_LIST
+
+		i=$(( i + 2 ))
+	done
+	
+	sleep 0.5
+	
+	unset minMaxFreqSize; unset i; unset maxFreqList;
+}
+
+#######
+# Logical cores detect the parent core of the cluster
+#######
+logicalCores() {
+	rm -rf $LOGICAL_CORE
+	
+	#####
+	# Get the logical core over affected cpu list
+	#####
+	core_count=$($BUSYBOX cat $CPU_CORE_COUNT)
+	# Counter
+	core=0
+	
+	# Core 0 is always affected
+	echo "0 " > $LOGICAL_CORE
+	
+	while [ $core -le $core_count ]; do
+		affected_cpus=/sys/devices/system/cpu/cpu$core/cpufreq/affected_cpus
+	
+		if [ -e $affected_cpus ]; then
+			getAffectedCPU=$($BUSYBOX cat $affected_cpus | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $1}')
+			
+			getLastInputAffectedCPU=$($BUSYBOX cat $LOGICAL_CORE | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $NF}')
+
+			if [ ! $getLastInputAffectedCPU -eq $getAffectedCPU ]; then
+				echo "$getAffectedCPU " >> $LOGICAL_CORE
+			fi
+		fi
+		
+		core=$(( core + 1 ))
+	done
+	
+	sleep 0.5
+	
+	unset core_count; unset core; unset affected_cpus; unset getAffectedCPU; unset getLastInputAffectedCPU;
+}
+
+##########
+# Lets create a Integer list containing non-repeating values of max_frequency
+##########
+getUniqueFreq() {
+	rm -rf $UNIQUE_FREQ
+	
+	sleep 0.2
+	
+	$BUSYBOX cat $MAX_FREQ_LIST | $BUSYBOX uniq > $UNIQUE_FREQ
+	
+	sleep 0.5
+}
+
+##########
+# coreGetter returns a list with parent core of clusters in descending order PRIME to LITTLE
+##########
+coreGetter() {
+
+rm -rf $CORE_GETTER
+	
+prime=0
+big=0
+little=0
+
+logicalCoresListSize=$($BUSYBOX cat $LOGICAL_CORE | $BUSYBOX tr '\n' ' ' | $BUSYBOX wc -w)
+uniqueFreqListSize=$($BUSYBOX cat $UNIQUE_FREQ | $BUSYBOX tr '\n' ' ' | $BUSYBOX wc -w)
+real_core_count=$($BUSYBOX cat $REAL_CPU_CORE_COUNT)
+
+if [ "$logicalCoresListSize" -eq 3 ] && [ "$uniqueFreqListSize" -eq 3 ]; then
+
+	firtsHighestFreq=$($BUSYBOX cat $UNIQUE_FREQ | $BUSYBOX sort -n | $BUSYBOX tail -1 | $BUSYBOX head -1)
+	secondHighestFreq=$($BUSYBOX cat $UNIQUE_FREQ | $BUSYBOX sort -n | $BUSYBOX tail -2 | $BUSYBOX head -1)
+	thirdHighestFreq=$($BUSYBOX cat $UNIQUE_FREQ | $BUSYBOX sort -n | $BUSYBOX tail -3 | $BUSYBOX head -1)
+
+	getPrimeCluster="$(grep -n "$firtsHighestFreq" $UNIQUE_FREQ | head -n 1 | cut -d: -f1)"
+	getBigCluster="$(grep -n "$secondHighestFreq" $UNIQUE_FREQ | head -n 1 | cut -d: -f1)"
+	getLittleCluster="$(grep -n "$thirdHighestFreq" $UNIQUE_FREQ | head -n 1 | cut -d: -f1)"
+
+	prime=$($BUSYBOX cat $LOGICAL_CORE | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $'$getPrimeCluster'}')
+	big=$($BUSYBOX cat $LOGICAL_CORE | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $'$getBigCluster'}')
+	little=$($BUSYBOX cat $LOGICAL_CORE | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $'$getLittleCluster'}')
+
+	$BUSYBOX printf "$prime\n$big\n$little" > $CORE_GETTER
+	
+
+elif [ "$logicalCoresListSize" -eq 2 ] && [ "$uniqueFreqListSize" -eq 2 ]; then
+
+	firtsHighestFreq=$($BUSYBOX cat $UNIQUE_FREQ | $BUSYBOX sort -n | $BUSYBOX tail -1 | $BUSYBOX head -1)
+	secondHighestFreq=$($BUSYBOX cat $UNIQUE_FREQ | $BUSYBOX sort -n | $BUSYBOX tail -2 | $BUSYBOX head -1)
+
+	getBigCluster="$($BUSYBOX grep -n "$firtsHighestFreq" $UNIQUE_FREQ | $BUSYBOX head -n 1 | $BUSYBOX cut -d: -f1)"
+	getLittleCluster="$($BUSYBOX grep -n "$secondHighestFreq" $UNIQUE_FREQ | $BUSYBOX head -n 1 | $BUSYBOX cut -d: -f1)"
+
+	big=$($BUSYBOX cat $LOGICAL_CORE | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $'$getBigCluster'}')
+	little=$($BUSYBOX cat $LOGICAL_CORE | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $'$getLittleCluster'}')
+
+	$BUSYBOX printf "$big\n$little" > $CORE_GETTER
+	
+	getBig=$($BUSYBOX cat $CORE_GETTER | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $1}')
+	getLittle=$($BUSYBOX cat $CORE_GETTER | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $2}')
+
+	# This is some dirty getter of inverted cluster
+	# for now works well
+	if [ $getBig -gt $getLittle ]; then
+		littleCoresCount=$((getBig))
+		bigCoresCount=$((real_core_count-getBig));
+	else
+		littleCoresCount=$((real_core_count-getLittle))
+		bigCoresCount=$((getLittle));
+	fi
+	
+	echo "$bigCoresCount" > $BIG_CORES_COUNT
+	echo "$littleCoresCount" > $LITTLE_CORES_COUNT
+
+else
+	$BUSYBOX cat $LOGICAL_CORE | $BUSYBOX tr ' ' '\n' | $BUSYBOX sort -n -r | $BUSYBOX uniq > $CORE_GETTER
+	
+fi
+
+unset logicalCoresListSize; unset uniqueFreqListSize; unset prime; unset big; unset little; unset firtsHighestFreq; unset secondHighestFreq; unset thirdHighestFreq; unset getPrimeCluster; unset getBigCluster; unset getLittleCluster
+sleep 0.5
+
+}
+
+######
+# Function to call other cpu detection related functons
+######
+cpuDetect() {
+	getCPUcoreCount
+	getMinAndMaxFreq
+	getMinFreqList
+	getMaxFreqList
+	logicalCores
+	getUniqueFreq
+	coreGetter
+}
+
+#######
+# Cpuset tuner used to tune up cpusets according to different CPU structures
+#######
+cpusetTuner() {
+	# Starting cpu_detect
+	sendToLog "Starting CPU detect...";
+	cpuDetect $1
+		
+	core_getter_list_size=$($BUSYBOX cat $CORE_GETTER | $BUSYBOX tr '\n' ' ' | $BUSYBOX wc -w)
+	core_count=$($BUSYBOX cat $CPU_CORE_COUNT)
+	real_core_count=$($BUSYBOX cat $REAL_CPU_CORE_COUNT)	
+
+	if [ "$core_getter_list_size" -eq 3 ]; then
+		getPrime=$($BUSYBOX cat $CORE_GETTER | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $1}')
+		getBig=$($BUSYBOX cat $CORE_GETTER | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $2}')
+		getLittle=$($BUSYBOX cat $CORE_GETTER | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $3}')
+		
+		# This shows real numbers, for usage we should use n-1
+		# e.g. CPU have 4 LITTLE(0-3) and 3 BIG (4-6) and 1 PRIME (7-7)
+		littleCoresCount=$((getBig))
+		bigCoresCount=$((getPrime-getBig));
+		primeCoresCount=$((real_core_count-getPrime));
+		
+		sendToLog "Setting up cpuset for $littleCoresCount(0-$((getBig-1))) LITTLE CPU cores, $bigCoresCount($getBig-$((getPrime-1))) BIG CPU cores and $primeCoresCount($getPrime-$core_count) PRIME CPU cores"
+		
+		# Setting up cpuset based on profiles
+		if [ "$2" = "1" ]; then
+			# 0-1 2-5 6-9
+			if [ $littleCoresCount -eq 2 ] && [ $bigCoresCount -eq 4 ] && [ $primeCoresCount -eq 4 ]; then
+				foreground="0-4"
+				topApp="0-5"
+				background="0-1"
+				systemBackround="0-1"
+				
+				validConfig=true
+				
+			# 0-3 4-5 6-7
+			elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 2 ] && [ $primeCoresCount -eq 2 ]; then
+				foreground="0-4"
+				topApp="0-5"
+				background="0-2"
+				systemBackround="0-3"
+				
+				validConfig=true
+				
+			# 0-3 4-6 7
+			elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 3 ] && [ $primeCoresCount -eq 1 ]; then
+				foreground="0-3"
+				topApp="0-4"
+				background="0-2"
+				systemBackround="0-3"
+				
+				validConfig=true
+			else
+				sendToLog "Cannot set cpuset for this CPU configuration"
+				
+				validConfig=false
+			fi
+		elif [ "$2" = "2" ]; then
+			# 0-1 2-5 6-9
+			if [ $littleCoresCount -eq 2 ] && [ $bigCoresCount -eq 4 ] && [ $primeCoresCount -eq 4 ]; then
+				foreground="0-4"
+				topApp="0-5"
+				background="0-1"
+				systemBackround="0-1"
+				
+				validConfig=true
+				
+			# 0-3 4-5 6-7
+			elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 2 ] && [ $primeCoresCount -eq 2 ]; then
+				foreground="0-5"
+				topApp="0-6"
+				background="0-2"
+				systemBackround="0-3"
+				
+				validConfig=true
+				
+			# 0-3 4-6 7
+			elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 3 ] && [ $primeCoresCount -eq 1 ]; then
+				foreground="0-5"
+				topApp="0-2,4-6"
+				background="0-2"
+				systemBackround="0-3"
+				
+				validConfig=true
+			else
+				sendToLog "Cannot set cpuset for this CPU configuration"
+				
+				validConfig=false
+			fi
+		elif [ "$2" = "3" ]; then
+			# 0-1 2-5 6-9
+			if [ $littleCoresCount -eq 2 ] && [ $bigCoresCount -eq 4 ] && [ $primeCoresCount -eq 4 ]; then
+				foreground="0-8"
+				topApp="0-9"
+				background="0-1"
+				systemBackround="0-1"
+				
+				validConfig=true
+				
+			# 0-3 4-5 6-7
+			elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 2 ] && [ $primeCoresCount -eq 2 ]; then
+				foreground="0-6"
+				topApp="0-7"
+				background="0-2"
+				systemBackround="0-3"
+				
+				validConfig=true
+				
+			# 0-3 4-6 7
+			elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 3 ] && [ $primeCoresCount -eq 1 ]; then
+				foreground="0-6"
+				topApp="0-7"
+				background="0-2"
+				systemBackround="0-3"
+				
+				validConfig=true
+			else
+				sendToLog "Cannot set cpuset for this CPU configuration"
+				
+				validConfig=false
+			fi
+		fi
+		
+	elif [ "$core_getter_list_size" -eq 2 ]; then
+		# This shows real numbers, for usage we should use n-1
+		# e.g. CPU have 6 LITTLE(0-5) and 2 BIG (6-7)
+		littleCoresCount=$($BUSYBOX cat $LITTLE_CORES_COUNT);
+		bigCoresCount=$($BUSYBOX cat $BIG_CORES_COUNT);
+			
+		sendToLog "Setting up cpuset for $littleCoresCount LITTLE CPU cores and $bigCoresCount BIG CPU cores"
+
+		# Setting up cpuset based on profiles
+		if [ "$2" = "1" ]; then
+			# 0-1 2-3
+			if [ $littleCoresCount -eq 2 ] && [ $bigCoresCount -eq 2 ]; then
+				foreground="0-1"
+				topApp="0-3"
+				background="0-1"
+				systemBackround="0-1"
+				
+				validConfig=true
+				
+			# 0-3 4-5
+			elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 2 ]; then
+				foreground="0-2,4"
+				topApp="0-5"
+				background="0-2"
+				systemBackround="0-3"	
+				
+				validConfig=true
+				
+			# 0-3 4-7
+			elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 4 ]; then
+				foreground="0-2,4-5"
+				topApp="0-7"
+				background="0-2"
+				systemBackround="0-3"
+				
+				validConfig=true
+				
+			# 0-5 6-7
+			elif [ $littleCoresCount -eq 6 ] && [ $bigCoresCount -eq 2 ]; then
+				foreground="0-2,6"
+				topApp="0-7"
+				background="0-2"
+				systemBackround="0-5"
+				
+				validConfig=true
+			else
+				sendToLog "Cannot set cpuset for this CPU configuration"
+				
+				validConfig=false
+			fi
+		elif [ "$2" = "2" ]; then
+			# 0-1 2-3
+			if [ $littleCoresCount -eq 2 ] && [ $bigCoresCount -eq 2 ]; then
+				foreground="0-2"
+				topApp="0-3"
+				background="0-1"
+				systemBackround="0-2"
+				
+				validConfig=true
+				
+			# 0-3 4-5
+			elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 2 ]; then
+				foreground="0-4"
+				topApp="0-5"
+				background="0-2"
+				systemBackround="0-3"	
+				
+				validConfig=true
+				
+			# 0-3 4-7
+			elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 4 ]; then
+				foreground="0-2,4-5"
+				topApp="0-7"
+				background="0-2"
+				systemBackround="0-3"
+				
+				validConfig=true
+				
+			# 0-5 6-7
+			elif [ $littleCoresCount -eq 6 ] && [ $bigCoresCount -eq 2 ]; then
+				foreground="0-3,6"
+				topApp="0-7"
+				background="0-2"
+				systemBackround="0-5"
+				
+				validConfig=true
+			else
+				sendToLog "Cannot set cpuset for this CPU configuration"
+				
+				validConfig=false
+			fi
+		elif [ "$2" = "3" ]; then
+			# 0-1 2-3
+			if [ $littleCoresCount -eq 2 ] && [ $bigCoresCount -eq 2 ]; then
+				foreground="0-2"
+				topApp="0-3"
+				background="0-1"
+				systemBackround="0-2"
+				
+				validConfig=true
+				
+			# 0-3 4-5
+			elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 2 ]; then
+				foreground="0-4"
+				topApp="0-5"
+				background="0-2"
+				systemBackround="0-3"
+
+				validConfig=true
+				
+			# 0-3 4-7
+			elif [ $littleCoresCount -eq 4 ] && [ $bigCoresCount -eq 4 ]; then
+				foreground="0-6"
+				topApp="0-7"
+				background="0-2"
+				systemBackround="0-3"
+				
+				validConfig=true
+				
+			# 0-5 6-7
+			elif [ $littleCoresCount -eq 6 ] && [ $bigCoresCount -eq 2 ]; then
+				foreground="0-6"
+				topApp="0-7"
+				background="0-2"
+				systemBackround="0-5"
+				
+				validConfig=true
+			else
+				sendToLog "Cannot set cpuset for this CPU configuration"
+				
+				validConfig=false
+			fi
+		fi
+	else 
+		getRegular=$($BUSYBOX cat $CORE_GETTER | $BUSYBOX tr '\n' ' ' | $BUSYBOX awk '{print $1}')
+			
+		sendToLog "Setting up cpuset for $real_core_count REGULAR CPU cores"
+			
+		# Setting up cpuset based on profiles
+		if [ "$2" = "1" ]; then
+			# 0-3
+			if [ "$real_core_count" -eq 4 ]; then
+				foreground="0-1"
+				topApp="0-3"
+				background="0-1"
+				systemBackround="0-2"
+				
+				validConfig=true
+				
+			# 0-5
+			elif [ "$real_core_count" -eq 6 ]; then
+				foreground="0-3"
+				topApp="0-4"
+				background="0-2"
+				systemBackround="0-3"
+				
+				validConfig=true
+				
+			# 0-7
+			elif [ "$real_core_count" -eq 8 ]; then
+				foreground="0-5"
+				topApp="0-6"
+				background="0-2"
+				systemBackround="0-4"
+				
+				validConfig=true
+				
+			# 0-9
+			elif [ "$real_core_count" -eq 10 ]; then
+				foreground="0-5"
+				topApp="0-6"
+				background="0-2"
+				systemBackround="0-4"
+				
+				validConfig=true
+			else
+				sendToLog "Cannot set cpuset for this CPU configuration"
+				
+				validConfig=false
+			fi
+			
+		elif [ "$2" = "2" ]; then
+			# 0-3
+			if [ "$real_core_count" -eq 4 ]; then
+				foreground="0-1"
+				topApp="0-4"
+				background="0-1"
+				systemBackround="0-2"
+				
+				validConfig=true
+				
+			# 0-5
+			elif [ "$real_core_count" -eq 6 ]; then
+				foreground="0-3"
+				topApp="0-4"
+				background="0-2"
+				systemBackround="0-3"
+				
+				validConfig=true
+				
+			# 0-7
+			elif [ "$real_core_count" -eq 8 ]; then
+				foreground="0-5"
+				topApp="0-6"
+				background="0-2"
+				systemBackround="0-4"
+				
+				validConfig=true
+				
+			# 0-9
+			elif [ "$real_core_count" -eq 10 ]; then
+				foreground="0-7"
+				topApp="0-8"
+				background="0-2"
+				systemBackround="0-4"
+				
+				validConfig=true
+			else
+				sendToLog "Cannot set cpuset for this CPU configuration"
+				
+				validConfig=false
+			fi
+			
+		elif [ "$2" = "3" ]; then
+			# 0-3
+			if [ "$real_core_count" -eq 4 ]; then
+				foreground="0-2"
+				topApp="0-3"
+				background="0-1"
+				systemBackround="0-2"
+				
+				validConfig=true
+				
+			# 0-5
+			elif [ "$real_core_count" -eq 6 ]; then
+				foreground="0-4"
+				topApp="0-5"
+				background="0-2"
+				systemBackround="0-3"
+				
+				validConfig=true
+				
+			# 0-7
+			elif [ "$real_core_count" -eq 8 ]; then
+				foreground="0-6"
+				topApp="0-7"
+				background="0-2"
+				systemBackround="0-5"
+				
+				validConfig=true
+				
+			# 0-9
+			elif [ "$real_core_count" -eq 10 ]; then
+				foreground="0-8"
+				topApp="0-9"
+				background="0-2"
+				systemBackround="0-5"
+				
+				validConfig=true
+			else
+				sendToLog "Cannot set cpuset for this CPU configuration"
+				
+				validConfig=false
+			fi
+		fi
+	fi
+
+	if [ $validConfig = true ]; then
+		# update cpuset now that processors are up
+		# Foreground should contain most cores
+		if [ -e /dev/cpuset/foreground/cpus ]; then
+			write /dev/cpuset/foreground/cpus "$foreground"
+			sendToLog "cpuset for foreground set: $foreground"
+		fi
+
+		# top-app usualy all the cpus
+		if [ -e /dev/cpuset/top-app/cpus ]; then
+			write /dev/cpuset/top-app/cpus "$topApp"
+			sendToLog "cpuset for top-app set: $topApp"
+		fi
+
+		# background contains a small subset so lower cores as possible
+		if [ -e /dev/cpuset/background/cpus ]; then
+			write /dev/cpuset/background/cpus "$background"
+			sendToLog "cpuset for background set: $background"
+		fi
+
+		# add system-background cpuset, a new cpuset for system services
+		# that should not run on larger cores
+		# system-background is for system tasks that should only run on
+		# little cores, not on bigs to be used only by init
+		# so we are using about the half of the cpu cores
+		if [ -e /dev/cpuset/system-background/cpus ]; then
+			write /dev/cpuset/system-background/cpus "$systemBackround"
+			sendToLog "cpuset for system-background set: $systemBackround"
+		fi
+	fi
+
+}
 
 #
 # Battery improvements
@@ -276,18 +1024,21 @@ sendToLog "Activating battery improvements...";
 		write /sys/kernel/debug/sched_features "ARCH_POWER"
 		sendToLog "ARCH_POWER enabled...";
 	fi;
+	
+	#/sys/power/pm_freeze_timeout controls how long it will cost at most to freeze
+	#all user space processes or all freezable kernel threads, in unit of millisecond.
+	#The default value is 20000, some Xiaomi devices are going in range from 2000 to 15000
+	#more info on https://www.kernel.org/doc/Documentation/power/freezing-of-tasks.txt
+	if [ -e "/sys/power/pm_freeze_timeout" ];  then
+		write /sys/power/pm_freeze_timeout "5000"
+		sendToLog "Kernel thread freeze time set to 5 seconds";
+	fi;
 
 	# Enable fast charging
 	if [ -e "/sys/kernel/fast_charge/force_fast_charge" ];  then
 		write /sys/kernel/fast_charge/force_fast_charge "1"
 		sendToLog "Fast charge enabled";
 	fi;
-
-	scsi_disk=$($BUSYBOX ls -d /sys/class/scsi_disk/*) 2>/dev/null
-	for i in $scsi_disk; do
- 		write "$i"/cache_type "temporary none"
- 		sendToLog "Set cache type to temporary none in $i";
- 	done
 
 	if [ -e /sys/module/wakeup/parameters/enable_bluetooth_timer ]; then
 		write /sys/module/wakeup/parameters/enable_bluetooth_timer "Y"
@@ -417,424 +1168,247 @@ dozeOptimization() {
 }
 
 #
-# CPU Optimization battery profile
+# CPU Optimization
 #
-cpuOptimizationBattery() {
-	sendToLog "Applying power saving CPU optimization...";
-
-	if [ -e "/sys/devices/system/cpu/cpuidle/use_deepest_state" ]; then
-		write /sys/devices/system/cpu/cpuidle/use_deepest_state "1"
-		sendToLog "Enable deepest CPU idle state";
-	fi;
-
-	# Disable krait voltage boost
-	if [ -e "/sys/module/acpuclock_krait/parameters/boost" ];  then
-		write /sys/module/acpuclock_krait/parameters/boost "N"
-		sendToLog "Disable Krait voltage boost";
-	fi;
-
-	if [ -e "/sys/module/workqueue/parameters/power_efficient" ]; then
-		lockFile /sys/module/workqueue/parameters/power_efficient "Y"
-		sendToLog "Power-save workqueues enabled, scheduling workqueues on awake CPUs to save power."
-	fi;
-
-	if [ -e /sys/module/cpu_input_boost/parameters/input_boost_duration ]; then
-		write /sys/module/cpu_input_boost/parameters/input_boost_duration "0"
-		sendToLog "CPU Boost Input Duration=0"
-	fi;
-
-	if [ -e /sys/module/cpu_boost/parameters/input_boost_ms ]; then
-		write /sys/module/cpu_boost/parameters/input_boost_ms "0"
-		sendToLog "CPU Boost Input Ms=0"
-	fi;
-
-	if [ -e /sys/module/cpu_boost/parameters/input_boost_ms_s2 ]; then
-		write /sys/module/cpu_boost/parameters/input_boost_ms_s2 "0"
-		sendToLog "CPU Boost Input Ms_S2=0"
-	fi;
-
-	if [ -e /sys/module/cpu_boost/parameters/dynamic_stune_boost ]; then
-		write /sys/module/cpu_boost/parameters/dynamic_stune_boost "0"
-		sendToLog "CPU Boost Dyn_Stune_Boost=0"
-	fi;
-
-	if [ -e /sys/module/cpu_input_boost/parameters/dynamic_stune_boost ]; then
-		write /sys/module/cpu_input_boost/parameters/dynamic_stune_boost "0"
-		sendToLog "CPU input boost Dyn_Stune_Boost=0"
-	fi;
-
-	if [ -e /sys/module/cpu_input_boost/parameters/general_stune_boost ]; then
-		write /sys/module/cpu_input_boost/parameters/general_stune_boost "10"
-		sendToLog "CPU input boost General_Stune_Boost=10"
-	fi;
-
-	if [ -e /sys/module/dsboost/parameters/input_boost_duration ]; then
-		write /sys/module/dsboost/parameters/input_boost_duration "0"
-		sendToLog "Dsboost Input Boost Duration=0"
-	fi;
-
-	if [ -e /sys/module/dsboost/parameters/input_stune_boost ]; then
-		write /sys/module/dsboost/parameters/input_stune_boost "0"
-		sendToLog "Dsboost Input Stune Boost Duration=0"
-	fi;
-
-	if [ -e /sys/module/dsboost/parameters/sched_stune_boost ]; then
-		write /sys/module/dsboost/parameters/sched_stune_boost "0"
-		sendToLog "Dsboost Sched_Stune_Boost=0"
-	fi;
-
-	if [ -e /sys/module/dsboost/parameters/cooldown_boost_duration ]; then
-		write /sys/module/dsboost/parameters/cooldown_boost_duration "0"
-		sendToLog "Dsboost Cooldown_Boost_Duration=0"
-	fi;
-
-	if [ -e /sys/module/dsboost/parameters/cooldown_stune_boost ]; then
-		write /sys/module/dsboost/parameters/cooldown_stune_boost "0"
-		sendToLog "Dsboost Cooldown_Stune_Boost=0"
-	fi;
-
-	# CPU CTL
-	if [ -e /dev/cpuctl/cpu.rt_period_us ]; then
-		write /dev/cpuctl/cpu.rt_period_us "1000000"
-		sendToLog "cpu.rt_period_us=1000000"
-	fi;
-
-	if [ -e /dev/cpuctl/cpu.rt_runtime_us ]; then
-		write /dev/cpuctl/cpu.rt_period_us "950000"
-		sendToLog "cpu.rt_runtime_us=950000"
-	fi;
-
-	sched_rt_period_us=/proc/sys/kernel/sched_rt_period_us
-	if [ -e $sched_rt_period_us ]; then
-		write $sched_rt_period_us "1000000"
-		sendToLog "$sched_rt_period_us=1000000"
-	fi;
-
-	sched_rt_runtime_us=/proc/sys/kernel/sched_rt_runtime_us
-	if [ -e $sched_rt_runtime_us ]; then
-		write $sched_rt_runtime_us "950000"
-		sendToLog "$sched_rt_runtime_us=950000"
-	fi;
-
-	sched_wake_to_idle=/proc/sys/kernel/sched_wake_to_idle
-	if [ -e $sched_wake_to_idle ]; then
-		write $sched_wake_to_idle "0"
-		sendToLog "$sched_wake_to_idle=0"
-	fi;
-
-	# Disable touch boost
-	touchboost=/sys/module/msm_performance/parameters/touchboost
-	if [ -e $touchboost ]; then
-		write $touchboost "0"
-		sendToLog "$touchboost=0"
-	fi;
-
-	touch_boost=/sys/power/pnpmgr/touch_boost
-	if [ -e $touch_boost ]; then
-		write $touch_boost "N"
-		sendToLog "$touch_boost=N"
-	fi;
-
-	#Disable CPU Boost
-	boost_ms=/sys/module/cpu_boost/parameters/boost_ms
-	if [ -e $boost_ms ]; then
-		write $boost_ms "N"
-		sendToLog "$boost_ms=N"
-	fi;
-
-	sched_boost_on_input=/sys/module/cpu_boost/parameters/sched_boost_on_input
-	if [ -e $sched_boost_on_input ]; then
-		write $sched_boost_on_input "N"
-		sendToLog "$sched_boost_on_input=N"
-	fi;
+cpuOptimization() {
+	if [ "$2" = "1" ]; then
+		profile="power saving"
+	elif [ "$2" = "2" ]; then
+		profile="balanced"
+	elif [ "$2" = "3" ]; then
+		profile="performance"
+	fi
 	
-	sh $CPUSET_TUNER 1
+	sendToLog "Applying $profile CPU optimization...";
+	
+	if [ "$2" = "1" ]; then
+		if [ -e "/sys/devices/system/cpu/cpuidle/use_deepest_state" ]; then
+			write /sys/devices/system/cpu/cpuidle/use_deepest_state "1"
+			sendToLog "Enable deepest CPU idle state";
+		fi
 
-	sendToLog "Power saving CPU optimization applied";
-	sendToLog "$divider";
-}
+		# Disable krait voltage boost
+		if [ -e "/sys/module/acpuclock_krait/parameters/boost" ];  then
+			write /sys/module/acpuclock_krait/parameters/boost "N"
+			sendToLog "Disable Krait voltage boost";
+		fi
 
-#
-# CPU Optimization balanced profile
-#
-cpuOptimizationBalanced() {
-	sendToLog "Applying balanced CPU optimization...";
+		if [ -e "/sys/module/workqueue/parameters/power_efficient" ]; then
+			lockFile /sys/module/workqueue/parameters/power_efficient "Y"
+			sendToLog "Power-save workqueues enabled, scheduling workqueues on awake CPUs to save power."
+		fi
+
+		# Disable touch boost
+		touchboost=/sys/module/msm_performance/parameters/touchboost
+		if [ -e $touchboost ]; then
+			write $touchboost "0"
+			sendToLog "$touchboost=0"
+		fi;
+
+		touch_boost=/sys/power/pnpmgr/touch_boost
+		if [ -e $touch_boost ]; then
+			write $touch_boost "N"
+			sendToLog "$touch_boost=N"
+		fi;
+
+		#Disable CPU Boost
+		boost_ms=/sys/module/cpu_boost/parameters/boost_ms
+		if [ -e $boost_ms ]; then
+			write $boost_ms "N"
+			sendToLog "$boost_ms=N"
+		fi;
+
+		sched_boost_on_input=/sys/module/cpu_boost/parameters/sched_boost_on_input
+		if [ -e $sched_boost_on_input ]; then
+			write $sched_boost_on_input "N"
+			sendToLog "$sched_boost_on_input=N"
+		fi;
+			
+		stune_background_prefer_idle="/dev/stune/background/schedtune.prefer_idle"
+		if [ -e $stune_background_prefer_idle ]; then
+			write $stune_background_prefer_idle "0"
+			sendToLog "$stune_background_prefer_idle=0"
+		fi
 		
-	if [ -e "/sys/devices/system/cpu/cpuidle/use_deepest_state" ]; then
-		write /sys/devices/system/cpu/cpuidle/use_deepest_state "1"
-		sendToLog "Enable deepest CPU idle state";
-	fi;
+		stune_foreground_prefer_idle="/dev/stune/foreground/schedtune.prefer_idle"
+		if [ -e $stune_foreground_prefer_idle ]; then
+			write $stune_foreground_prefer_idle "0"
+			sendToLog "$stune_foreground_prefer_idle=0"
+		fi
+		
+		stune_topapp_prefer_idle="/dev/stune/top-app/schedtune.prefer_idle"
+		if [ -e $stune_topapp_prefer_idle ]; then
+			write $stune_topapp_prefer_idle "1"
+			sendToLog "$stune_topapp_prefer_idle=1"
+		fi
+		
+		stune_global_prefer_idle="/dev/stune/schedtune.prefer_idle"
+		if [ -e $stune_global_prefer_idle ]; then
+			write $stune_global_prefer_idle "0"
+			sendToLog "$stune_global_prefer_idle=0"
+		fi
+		
+		stune_rt_prefer_idle="/dev/stune/rt/schedtune.prefer_idle"
+		if [ -e $stune_rt_prefer_idle ]; then
+			write $stune_rt_prefer_idle "0"
+			sendToLog "$stune_rt_prefer_idle=0"
+		fi
+	elif [ "$2" = "2" ]; then
+		if [ -e "/sys/devices/system/cpu/cpuidle/use_deepest_state" ]; then
+			write /sys/devices/system/cpu/cpuidle/use_deepest_state "1"
+			sendToLog "Enable deepest CPU idle state";
+		fi
 
-	# Disable krait voltage boost
-	if [ -e "/sys/module/acpuclock_krait/parameters/boost" ];  then
-		write /sys/module/acpuclock_krait/parameters/boost "N"
-		sendToLog "Disable Krait voltage boost";
-	fi;
+		# Disable krait voltage boost
+		if [ -e "/sys/module/acpuclock_krait/parameters/boost" ];  then
+			write /sys/module/acpuclock_krait/parameters/boost "N"
+			sendToLog "Disable Krait voltage boost";
+		fi
+		
+		if [ -e "/sys/module/workqueue/parameters/power_efficient" ]; then
+			lockFile /sys/module/workqueue/parameters/power_efficient "N"
+			sendToLog "Power-save workqueues disabled, scheduling workqueues on awake CPUs to save power."
+		fi
 
-	if [ -e "/sys/module/workqueue/parameters/power_efficient" ]; then
-		lockFile /sys/module/workqueue/parameters/power_efficient "N"
-		sendToLog "Power-save workqueues disabled, scheduling workqueues on awake CPUs to save power."
-	fi;
+		# Disable touch boost
+		touchboost=/sys/module/msm_performance/parameters/touchboost
+		if [ -e $touchboost ]; then
+			write $touchboost "0"
+			sendToLog "$touchboost=0"
+		fi;
 
-	if [ -e /sys/module/cpu_input_boost/parameters/input_boost_duration ]; then
-		write /sys/module/cpu_input_boost/parameters/input_boost_duration "60"
-		sendToLog "CPU Boost Input Duration=60"
-	fi;
+		touch_boost=/sys/power/pnpmgr/touch_boost
+		if [ -e $touch_boost ]; then
+			write $touch_boost "N"
+			sendToLog "$touch_boost=N"
+		fi;
 
-	if [ -e /sys/module/cpu_boost/parameters/input_boost_ms ]; then
-		write /sys/module/cpu_boost/parameters/input_boost_ms "60"
-		sendToLog "CPU Boost Input Ms=60"
-	fi;
+		#Disable CPU Boost
+		boost_ms=/sys/module/cpu_boost/parameters/boost_ms
+		if [ -e $boost_ms ]; then
+			write $boost_ms "N"
+			sendToLog "$boost_ms=N"
+		fi;
 
-	if [ -e /sys/module/cpu_boost/parameters/input_boost_ms_s2 ]; then
-		write /sys/module/cpu_boost/parameters/input_boost_ms_s2 "30"
-		sendToLog "CPU Boost Input Ms_S2=30"
-	fi;
+		sched_boost_on_input=/sys/module/cpu_boost/parameters/sched_boost_on_input
+		if [ -e $sched_boost_on_input ]; then
+			write $sched_boost_on_input "N"
+			sendToLog "$sched_boost_on_input=N"
+		fi;
+		
+		stune_background_prefer_idle="/dev/stune/background/schedtune.prefer_idle"
+		if [ -e $stune_background_prefer_idle ]; then
+			write $stune_background_prefer_idle "0"
+			sendToLog "$stune_background_prefer_idle=0"
+		fi
+		
+		stune_foreground_prefer_idle="/dev/stune/foreground/schedtune.prefer_idle"
+		if [ -e $stune_foreground_prefer_idle ]; then
+			write $stune_foreground_prefer_idle "0"
+			sendToLog "$stune_foreground_prefer_idle=0"
+		fi
+		
+		stune_topapp_prefer_idle="/dev/stune/top-app/schedtune.prefer_idle"
+		if [ -e $stune_topapp_prefer_idle ]; then
+			write $stune_topapp_prefer_idle "1"
+			sendToLog "$stune_topapp_prefer_idle=1"
+		fi
+		
+		stune_global_prefer_idle="/dev/stune/schedtune.prefer_idle"
+		if [ -e $stune_global_prefer_idle ]; then
+			write $stune_global_prefer_idle "0"
+			sendToLog "$stune_global_prefer_idle=0"
+		fi
+		
+		stune_rt_prefer_idle="/dev/stune/rt/schedtune.prefer_idle"
+		if [ -e $stune_rt_prefer_idle ]; then
+			write $stune_rt_prefer_idle "0"
+			sendToLog "$stune_rt_prefer_idle=0"
+		fi
+	elif [ "$2" = "3" ]; then
+		if [ -e "/sys/devices/system/cpu/cpuidle/use_deepest_state" ]; then
+			write /sys/devices/system/cpu/cpuidle/use_deepest_state "1"
+			sendToLog "Enable deepest CPU idle state";
+		fi
 
-	if [ -e /sys/module/cpu_boost/parameters/dynamic_stune_boost ]; then
-		write /sys/module/cpu_boost/parameters/dynamic_stune_boost "20"
-		sendToLog "CPU Boost Dyn_Stune_Boost=20"
-	fi;
+		# Disable krait voltage boost
+		if [ -e "/sys/module/acpuclock_krait/parameters/boost" ];  then
+			write /sys/module/acpuclock_krait/parameters/boost "Y"
+			sendToLog "Enable Krait voltage boost";
+		fi
 
-	if [ -e /sys/module/cpu_input_boost/parameters/dynamic_stune_boost ]; then
-		write /sys/module/cpu_input_boost/parameters/dynamic_stune_boost "20"
-		sendToLog "CPU input boost Dyn_Stune_Boost=20"
-	fi;
+		if [ -e "/sys/module/workqueue/parameters/power_efficient" ]; then
+			lockFile /sys/module/workqueue/parameters/power_efficient "N"
+			sendToLog "Power-save workqueues disabled, scheduling workqueues on awake CPUs to save power."
+		fi
 
-	if [ -e /sys/module/cpu_input_boost/parameters/general_stune_boost ]; then
-		write /sys/module/cpu_input_boost/parameters/general_stune_boost "60"
-		sendToLog "CPU input boost General_Stune_Boost=60"
-	fi;
+		# Disable touch boost
+		touchboost=/sys/module/msm_performance/parameters/touchboost
+		if [ -e $touchboost ]; then
+			write $touchboost "0"
+			sendToLog "$touchboost=0"
+		fi;
 
-	if [ -e /sys/module/dsboost/parameters/input_boost_duration ]; then
-		write /sys/module/dsboost/parameters/input_boost_duration "60"
-		sendToLog "Dsboost Input Boost Duration=60"
-	fi;
+		touch_boost=/sys/power/pnpmgr/touch_boost
+		if [ -e $touch_boost ]; then
+			write $touch_boost "N"
+			sendToLog "$touch_boost=N"
+		fi;
 
-	if [ -e /sys/module/dsboost/parameters/input_stune_boost ]; then
-		write /sys/module/dsboost/parameters/input_stune_boost "60"
-		sendToLog "Dsboost Input Stune Boost Duration=60"
-	fi;
+		#Disable CPU Boost
+		boost_ms=/sys/module/cpu_boost/parameters/boost_ms
+		if [ -e $boost_ms ]; then
+			write $boost_ms "N"
+			sendToLog "$boost_ms=N"
+		fi;
 
-	if [ -e /sys/module/dsboost/parameters/sched_stune_boost ]; then
-		write /sys/module/dsboost/parameters/sched_stune_boost "10"
-		sendToLog "Dsboost Sched_Stune_Boost=10"
-	fi;
+		sched_boost_on_input=/sys/module/cpu_boost/parameters/sched_boost_on_input
+		if [ -e $sched_boost_on_input ]; then
+			write $sched_boost_on_input "N"
+			sendToLog "$sched_boost_on_input=N"
+		fi;
+		
+		stune_background_prefer_idle="/dev/stune/background/schedtune.prefer_idle"
+		if [ -e $stune_background_prefer_idle ]; then
+			write $stune_background_prefer_idle "0"
+			sendToLog "$stune_background_prefer_idle=0"
+		fi
+		
+		stune_foreground_prefer_idle="/dev/stune/foreground/schedtune.prefer_idle"
+		if [ -e $stune_foreground_prefer_idle ]; then
+			write $stune_foreground_prefer_idle "0"
+			sendToLog "$stune_foreground_prefer_idle=0"
+		fi
+		
+		stune_topapp_prefer_idle="/dev/stune/top-app/schedtune.prefer_idle"
+		if [ -e $stune_topapp_prefer_idle ]; then
+			write $stune_topapp_prefer_idle "1"
+			sendToLog "$stune_topapp_prefer_idle=1"
+		fi
+		
+		stune_global_prefer_idle="/dev/stune/schedtune.prefer_idle"
+		if [ -e $stune_global_prefer_idle ]; then
+			write $stune_global_prefer_idle "0"
+			sendToLog "$stune_global_prefer_idle=0"
+		fi
 
-	if [ -e /sys/module/dsboost/parameters/cooldown_boost_duration ]; then
-		write /sys/module/dsboost/parameters/cooldown_boost_duration "60"
-		sendToLog "Dsboost Cooldown_Boost_Duration=60"
-	fi;
+		stune_rt_prefer_idle="/dev/stune/rt/schedtune.prefer_idle"
+		if [ -e $stune_rt_prefer_idle ]; then
+			write $stune_rt_prefer_idle "0"
+			sendToLog "$stune_rt_prefer_idle=0"
+		fi
+	fi
 
-	if [ -e /sys/module/dsboost/parameters/cooldown_stune_boost ]; then
-		write /sys/module/dsboost/parameters/cooldown_stune_boost "10"
-		sendToLog "Dsboost Cooldown_Stune_Boost=10"
-	fi;
+	cpusetTuner $1 $2
 
-	# CPU CTL
-	if [ -e /dev/cpuctl/cpu.rt_period_us ]; then
-		write /dev/cpuctl/cpu.rt_period_us "1000000"
-		sendToLog "cpu.rt_period_us=1000000"
-	fi;
-
-	if [ -e /dev/cpuctl/cpu.rt_runtime_us ]; then
-		write /dev/cpuctl/cpu.rt_period_us "950000"
-		sendToLog "cpu.rt_runtime_us=950000"
-	fi;
-
-	sched_rt_period_us=/proc/sys/kernel/sched_rt_period_us
-	if [ -e $sched_rt_period_us ]; then
-		write $sched_rt_period_us "1000000"
-		sendToLog "$sched_rt_period_us=1000000"
-	fi;
-
-	sched_rt_runtime_us=/proc/sys/kernel/sched_rt_runtime_us
-	if [ -e $sched_rt_runtime_us ]; then
-		write $sched_rt_runtime_us "950000"
-		sendToLog "$sched_rt_runtime_us=950000"
-	fi;
-
-	sched_wake_to_idle=/proc/sys/kernel/sched_wake_to_idle
-	if [ -e $sched_wake_to_idle ]; then
-		write $sched_wake_to_idle "0"
-		sendToLog "$sched_wake_to_idle=0"
-	fi;
-
-	# Disable touch boost
-	touchboost=/sys/module/msm_performance/parameters/touchboost
-	if [ -e $touchboost ]; then
-		write $touchboost "0"
-		sendToLog "$touchboost=0"
-	fi;
-
-	touch_boost=/sys/power/pnpmgr/touch_boost
-	if [ -e $touch_boost ]; then
-		write $touch_boost "N"
-		sendToLog "$touch_boost=N"
-	fi;
-
-	#Disable CPU Boost
-	boost_ms=/sys/module/cpu_boost/parameters/boost_ms
-	if [ -e $boost_ms ]; then
-		write $boost_ms "N"
-		sendToLog "$boost_ms=N"
-	fi;
-
-	sched_boost_on_input=/sys/module/cpu_boost/parameters/sched_boost_on_input
-	if [ -e $sched_boost_on_input ]; then
-		write $sched_boost_on_input "N"
-		sendToLog "$sched_boost_on_input=N"
-	fi;
-	
-	sh $CPUSET_TUNER 2
-
-	sendToLog "Balanced CPU optimization applied";
-	sendToLog "$divider";
-}
-
-#
-# CPU Optimization performance profile
-#
-cpuOptimizationPerformance() {
-	sendToLog "Applying performance CPU optimization...";
-
-	if [ -e "/sys/devices/system/cpu/cpuidle/use_deepest_state" ]; then
-		write /sys/devices/system/cpu/cpuidle/use_deepest_state "1"
-		sendToLog "Enable deepest CPU idle state";
-	fi;
-
-	# Disable krait voltage boost
-	if [ -e "/sys/module/acpuclock_krait/parameters/boost" ];  then
-		write /sys/module/acpuclock_krait/parameters/boost "Y"
-		sendToLog "Enable Krait voltage boost";
-	fi;
-
-	if [ -e "/sys/module/workqueue/parameters/power_efficient" ]; then
-		lockFile /sys/module/workqueue/parameters/power_efficient "N"
-		sendToLog "Power-save workqueues disabled, scheduling workqueues on awake CPUs to save power."
-	fi;
-
-	if [ -e /sys/module/cpu_input_boost/parameters/input_boost_duration ]; then
-		write /sys/module/cpu_input_boost/parameters/input_boost_duration "120"
-		sendToLog "CPU Boost Input Duration=120"
-	fi;
-
-	if [ -e /sys/module/cpu_boost/parameters/input_boost_ms ]; then
-		write /sys/module/cpu_boost/parameters/input_boost_ms "120"
-		sendToLog "CPU Boost Input Ms=120"
-	fi;
-
-	if [ -e /sys/module/cpu_boost/parameters/input_boost_ms_s2 ]; then
-		write /sys/module/cpu_boost/parameters/input_boost_ms_s2 "50"
-		sendToLog "CPU Boost Input Ms_S2=50"
-	fi;
-
-	if [ -e /sys/module/cpu_boost/parameters/dynamic_stune_boost ]; then
-		write /sys/module/cpu_boost/parameters/dynamic_stune_boost "30"
-		sendToLog "CPU Boost Dyn_Stune_Boost=30"
-	fi;
-
-	if [ -e /sys/module/cpu_input_boost/parameters/dynamic_stune_boost ]; then
-		write /sys/module/cpu_input_boost/parameters/dynamic_stune_boost "30"
-		sendToLog "CPU input boost Dyn_Stune_Boost=30"
-	fi;
-
-	if [ -e /sys/module/cpu_input_boost/parameters/general_stune_boost ]; then
-		write /sys/module/cpu_input_boost/parameters/general_stune_boost "10"
-		sendToLog "CPU input boost General_Stune_Boost=10"
-	fi;
-
-	if [ -e /sys/module/dsboost/parameters/input_boost_duration ]; then
-		write /sys/module/dsboost/parameters/input_boost_duration "120"
-		sendToLog "Dsboost Input Boost Duration=120"
-	fi;
-
-	if [ -e /sys/module/dsboost/parameters/input_stune_boost ]; then
-		write /sys/module/dsboost/parameters/input_stune_boost "120"
-		sendToLog "Dsboost Input Stune Boost Duration=120"
-	fi;
-
-	if [ -e /sys/module/dsboost/parameters/sched_stune_boost ]; then
-		write /sys/module/dsboost/parameters/sched_stune_boost "10"
-		sendToLog "Dsboost Sched_Stune_Boost=10"
-	fi;
-
-	if [ -e /sys/module/dsboost/parameters/cooldown_boost_duration ]; then
-		write /sys/module/dsboost/parameters/cooldown_boost_duration "120"
-		sendToLog "Dsboost Cooldown_Boost_Duration=120"
-	fi;
-
-	if [ -e /sys/module/dsboost/parameters/cooldown_stune_boost ]; then
-		write /sys/module/dsboost/parameters/cooldown_stune_boost "10"
-		sendToLog "Dsboost Cooldown_Stune_Boost=10"
-	fi;
-
-	# CPU CTL
-	if [ -e /dev/cpuctl/cpu.rt_period_us ]; then
-		write /dev/cpuctl/cpu.rt_period_us "1000000"
-		sendToLog "cpu.rt_period_us=1000000"
-	fi;
-
-	if [ -e /dev/cpuctl/cpu.rt_runtime_us ]; then
-		write /dev/cpuctl/cpu.rt_period_us "950000"
-		sendToLog "cpu.rt_runtime_us=950000"
-	fi;
-
-	sched_rt_period_us=/proc/sys/kernel/sched_rt_period_us
-	if [ -e $sched_rt_period_us ]; then
-		write $sched_rt_period_us "1000000"
-		sendToLog "$sched_rt_period_us=1000000"
-	fi;
-
-	sched_rt_runtime_us=/proc/sys/kernel/sched_rt_runtime_us
-	if [ -e $sched_rt_runtime_us ]; then
-		write $sched_rt_runtime_us "950000"
-		sendToLog "$sched_rt_runtime_us=950000"
-	fi;
-
-
-	sched_wake_to_idle=/proc/sys/kernel/sched_wake_to_idle
-	if [ -e $sched_wake_to_idle ]; then
-		write $sched_wake_to_idle "0"
-		sendToLog "$sched_wake_to_idle=0"
-	fi;
-
-	# Disable touch boost
-	touchboost=/sys/module/msm_performance/parameters/touchboost
-	if [ -e $touchboost ]; then
-		write $touchboost "0"
-		sendToLog "$touchboost=0"
-	fi;
-
-	touch_boost=/sys/power/pnpmgr/touch_boost
-	if [ -e $touch_boost ]; then
-		write $touch_boost "N"
-		sendToLog "$touch_boost=N"
-	fi;
-
-	#Disable CPU Boost
-	boost_ms=/sys/module/cpu_boost/parameters/boost_ms
-	if [ -e $boost_ms ]; then
-		write $boost_ms "N"
-		sendToLog "$boost_ms=N"
-	fi;
-
-	sched_boost_on_input=/sys/module/cpu_boost/parameters/sched_boost_on_input
-	if [ -e $sched_boost_on_input ]; then
-		write $sched_boost_on_input "N"
-		sendToLog "$sched_boost_on_input=N"
-	fi;
-
-	sh $CPUSET_TUNER 3
-
-	sendToLog "Performance CPU optimization applied";
+	sendToLog "Successfully applied $profile CPU optimization";
 	sendToLog "$divider";
 }
 
 governorTuner() {
-	if [ "$1" = "1" ] || [ "$1" = "2" ] || [ "$1" = "3" ]; then
+	if [ "$2" = "1" ] || [ "$2" = "2" ] || [ "$2" = "3" ]; then
 		sendToLog "Starting governor tuner background service"
-		sh $BINARY_DIR/governor_tuner &
+		sh $GOVERNOR_TUNER $1 &
 
 		sendToLog "Successfully started governor tuner background service, changes will be done in a while"
 	else 
@@ -844,52 +1418,49 @@ governorTuner() {
 	sendToLog "$divider";
 }
 
-entropyAggressive() {
-	sendToLog "Activating aggressive entropy profile..."
+entropy() {
+	if [ "$1" = "1" ]; then
+		sendToLog "Activating light entropy profile..."
+		$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=64
+		$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=128
+		$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
+		sendToLog "Light entropy profile activated"
+	
+	elif [ "$1" = "2" ]; then
+		sendToLog "Activating enlarger entropy profile..."
+		$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=128
+		$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=896
+		$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
+		sendToLog "Enlarger entropy profile activated"
+		
+	elif [ "$1" = "3" ]; then	
+		sendToLog "Activating moderate entropy profile..."
+		$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=128
+		$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=256
+		$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
+		sendToLog "Moderate entropy profile activated"
+		
+	elif [ "$1" = "4" ]; then	
+		sendToLog "Activating aggressive entropy profile..."
+		$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=512
+		$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=1024
+		$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
+		sendToLog "Aggressive entropy profile activated"
+	fi
 
-	$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=512
-	$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=1024
-	$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
-
-	sendToLog "Aggressive entropy profile activated"
 	sendToLog "$divider";
 }
 
-entropyEnlarger() {
-	sendToLog "Activating enlarger entropy profile..."
-
-	$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=128
-	$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=896
-	$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
-
-	sendToLog "Enlarger entropy profile activated"
-	sendToLog "$divider";
-}
-
-entropyLight() {
-	sendToLog "Activating light entropy profile..."
-
-	$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=64
-	$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=128
-	$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
-
-	sendToLog "Light entropy profile activated"
-	sendToLog "$divider";
-}
-
-entropyModerate() {
-	sendToLog "Activating moderate entropy profile..."
-
-	$BUSYBOX sysctl -e -w kernel.random.read_wakeup_threshold=128
-	$BUSYBOX sysctl -e -w kernel.random.write_wakeup_threshold=256
-	$BUSYBOX sysctl -e -w kernel.random.urandom_min_reseed_secs=90
-
-	sendToLog "Moderate entropy profile activated"
-	sendToLog "$divider";
-}
-
-gpuOptimizerBalanced() {
-	sendToLog "Applying balanced GPU optimization...";
+gpuOptimizer() {
+	if [ "$1" = "1" ]; then
+		profile="power saving"
+	elif [ "$1" = "2" ]; then
+		profile="balanced"
+	elif [ "$1" = "3" ]; then
+		profile="performance"
+	fi
+	
+	sendToLog "Applying $profile GPU optimization...";
 
 	# GPU related tweaks
 	if [ -d "/sys/class/kgsl/kgsl-3d0" ]; then
@@ -936,307 +1507,166 @@ gpuOptimizerBalanced() {
 		resetprop ro.hwui.texture_cache_flushrate 0.3
 	fi
 	sendToLog "Optimized GPU caches";
-
+	#dumpsys SurfaceFlinger --dispsync
+	
 	if [ -e /proc/gpufreq/gpufreq_limited_thermal_ignore ]; then
-		write /proc/gpufreq/gpufreq_limited_thermal_ignore "1"		
-		sendToLog "Disabled gpufreq thermal"
-	fi;
+		if [ "$1" = "1" ]; then
+			write /proc/gpufreq/gpufreq_limited_thermal_ignore "0"
+			sendToLog "Enabled gpufreq thermal"
+			
+		elif [ "$1" = "2" ]; then
+			write /proc/gpufreq/gpufreq_limited_thermal_ignore "1"
+			sendToLog "Disabled gpufreq thermal"
+			
+		elif [ "$1" = "3" ]; then
+			write /proc/gpufreq/gpufreq_limited_thermal_ignore "1"
+			sendToLog "Disabled gpufreq thermal"
+		fi
+	fi
 
+	# Dynamic voltage frequency scheduler for gpu on
 	if [ -e /proc/mali/dvfs_enable ]; then
 		write /proc/mali/dvfs_enable "1"		
 		sendToLog "dvfs enabled"
-	fi;
-
-	if [ -e /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate ]; then
-		write /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate "1"		
-		sendToLog "Simple GPU algorithm enabled"
-	fi;
-
-	# Adreno idler
-	if [ -e /sys/module/adreno_idler/parameters/adreno_idler_active ]; then
-		write /sys/module/adreno_idler/parameters/adreno_idler_active "Y"
-		write /sys/module/adreno_idler/parameters/adreno_idler_idleworkload "6000"
-		write /sys/module/adreno_idler/parameters/adreno_idler_downdifferential "15"
-		write /sys/module/adreno_idler/parameters/adreno_idler_idlewait "15"
-		sendToLog "Disabled and tweaked adreno idler"
-	fi;
-
-	if [ -e $gpu/devfreq/adrenoboost ]; then
-		write $gpu/devfreq/adrenoboost "1"
-		sendToLog "Adreno boost is set to 1"
-	fi;
-
-	if [ -e $gpu/throttling ]; then
-		write $gpu/throttling "0"
-		sendToLog "GPU throttling disabled"
-	fi;
-
-	if [ -e $gpu/max_pwrlevel ]; then
-		write $gpu/max_pwrlevel "0"
-		sendToLog "GPU max power level disabled"
-	fi;
-
-	if [ -e $gpu/force_no_nap ]; then
-		write $gpu/force_no_nap "1"
-		sendToLog "force_no_nap enabled"
-	fi;
-
-	if [ -e $gpu/bus_split ]; then
-		write $gpu/bus_split "1"
-		sendToLog "bus_split enabled"
-	fi;
-
-	if [ -e $gpu/force_bus_on ]; then
-		write $gpu/force_bus_on "1"		
-		sendToLog "force_bus_on enabled"
-	fi;
-
-	if [ -e $gpu/force_clk_on ]; then
-		write $gpu/force_clk_on "1"		
-		sendToLog "force_clk_on enabled"
-	fi;
-		
-	if [ -e $gpu/force_rail_on ]; then
-		write $gpu/force_rail_on "1"		
-		sendToLog "force_rail_on enabled"
-	fi;
-
-	sendToLog "Balanced GPU optimization applied"
-	sendToLog "$divider";
-}
-
-gpuOptimizerPerformance() {
-	sendToLog "Applying performance GPU optimization...";
-
-	# GPU related tweaks
-	if [ -d "/sys/class/kgsl/kgsl-3d0" ]; then
-		gpu="/sys/class/kgsl/kgsl-3d0"
-	elif [ -d "/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0" ]; then
-		gpu="/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0"
-	elif [ -d "/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
-		gpu="/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
-	elif [ -d "/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
-		gpu="/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
-	elif [ -d "/sys/devices/platform/*.gpu/devfreq/*.gpu" ]; then
-		gpu="/sys/devices/platform/*.gpu/devfreq/*.gpu"
-	elif [ -d "/sys/devices/platform/gpusysfs" ]; then
-		gpu="/sys/devices/platform/gpusysfs"
-	elif [ -d "/sys/devices/*.mali" ]; then
-		gpu="/sys/devices/*.mali"
-	elif [ -d "/sys/devices/*.gpu" ]; then
-		gpu="/sys/devices/*.gpu"
-	elif [ -d "/sys/devices/platform/mali.0" ]; then
-		gpu="/sys/devices/platform/mali.0"
-	elif [ -d "/sys/devices/platform/mali-*.0" ]; then
-		gpu="/sys/devices/platform/mali-*.0"
-	elif [ -d "/sys/module/mali/parameters" ]; then
-		gpu="/sys/module/mali/parameters"
-	elif [ -d "/sys/class/misc/mali0" ]; then
-		gpu="/sys/class/misc/mali0"
-	elif [ -d "/sys/kernel/gpu" ]; then
-		gpu="/sys/kernel/gpu"
 	fi
-
-	if [ "$memTotal" -lt 3072 ]; then
-		resetprop ro.hwui.texture_cache_size $((memTotal*10/100/2));
-		resetprop ro.hwui.layer_cache_size $((memTotal*5/100/2));
-		resetprop ro.hwui.path_cache_size $((memTotal*2/100/2));
-		resetprop ro.hwui.r_buffer_cache_size $((memTotal/100/2));
-		resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100/2));
-		resetprop ro.hwui.texture_cache_flushrate 0.3
-	else 
-		resetprop ro.hwui.texture_cache_size $((memTotal*10/100));
-		resetprop ro.hwui.layer_cache_size $((memTotal*5/100));
-		resetprop ro.hwui.path_cache_size $((memTotal*2/100));
-		resetprop ro.hwui.r_buffer_cache_size $((memTotal/100));
-		resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100));
-		resetprop ro.hwui.texture_cache_flushrate 0.3
-	fi
-	sendToLog "Optimized GPU caches";
-
-	if [ -e /proc/gpufreq/gpufreq_limited_thermal_ignore ]; then
-		write /proc/gpufreq/gpufreq_limited_thermal_ignore "1"		
-		sendToLog "Disabled gpufreq thermal"
-	fi;
-
-	if [ -e /proc/mali/dvfs_enable ]; then
-		write /proc/mali/dvfs_enable "1"		
+	
+	if [ -e /sys/module/pvrsrvkm/parameters/gpu_dvfs_enable ]; then
+		write /sys/module/pvrsrvkm/parameters/gpu_dvfs_enable "1"		
 		sendToLog "dvfs enabled"
-	fi;
-
-	if [ -e /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate ]; then
-		write /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate "1"		
-		sendToLog "Simple GPU algorithm enabled"
-	fi;
-
-	# Adreno idler
-	if [ -e /sys/module/adreno_idler/parameters/adreno_idler_active ]; then
-		write /sys/module/adreno_idler/parameters/adreno_idler_active "N"
-		write /sys/module/adreno_idler/parameters/adreno_idler_idleworkload "6000"
-		write /sys/module/adreno_idler/parameters/adreno_idler_downdifferential "15"
-		write /sys/module/adreno_idler/parameters/adreno_idler_idlewait "15"
-		sendToLog "Disabled and tweaked adreno idler"
-	fi;
-
-	if [ -e $gpu/devfreq/adrenoboost ]; then
-		write $gpu/devfreq/adrenoboost "2"
-		sendToLog "Adreno boost is set to 2"
-	fi;
-
-	if [ -e $gpu/throttling ]; then
-		write $gpu/throttling "0"
-		sendToLog "GPU throttling disabled"
-	fi;
-
-	if [ -e $gpu/max_pwrlevel ]; then
-		write $gpu/max_pwrlevel "0"
-		sendToLog "GPU max power level disabled"
-	fi;
-
-	if [ -e $gpu/force_no_nap ]; then
-		write $gpu/force_no_nap "1"
-		sendToLog "force_no_nap enabled"
-	fi;
-
-	if [ -e $gpu/bus_split ]; then
-		write $gpu/bus_split "0"
-		sendToLog "bus_split disabled"
-	fi;
-
-	if [ -e $gpu/force_bus_on ]; then
-		write $gpu/force_bus_on "1"		
-		sendToLog "force_bus_on enabled"
-	fi;
-
-	if [ -e $gpu/force_clk_on ]; then
-		write $gpu/force_clk_on "1"		
-		sendToLog "force_clk_on enabled"
-	fi;
-		
-	if [ -e $gpu/force_rail_on ]; then
-		write $gpu/force_rail_on "1"		
-		sendToLog "force_rail_on enabled"
-	fi;
-
-	sendToLog "Performance GPU optimization applied"
-	sendToLog "$divider";
-}
-
-gpuOptimizerPowerSaving() {
-	sendToLog "Applying power saving GPU optimization...";
-
-	# GPU related tweaks
-	if [ -d "/sys/class/kgsl/kgsl-3d0" ]; then
-		gpu="/sys/class/kgsl/kgsl-3d0"
-	elif [ -d "/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0" ]; then
-		gpu="/sys/devices/platform/kgsl-3d0.0/kgsl/kgsl-3d0"
-	elif [ -d "/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
-		gpu="/sys/devices/soc/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
-	elif [ -d "/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0" ]; then
-		gpu="/sys/devices/soc.0/*.qcom,kgsl-3d0/kgsl/kgsl-3d0"
-	elif [ -d "/sys/devices/platform/*.gpu/devfreq/*.gpu" ]; then
-		gpu="/sys/devices/platform/*.gpu/devfreq/*.gpu"
-	elif [ -d "/sys/devices/platform/gpusysfs" ]; then
-		gpu="/sys/devices/platform/gpusysfs"
-	elif [ -d "/sys/devices/*.mali" ]; then
-		gpu="/sys/devices/*.mali"
-	elif [ -d "/sys/devices/*.gpu" ]; then
-		gpu="/sys/devices/*.gpu"
-	elif [ -d "/sys/devices/platform/mali.0" ]; then
-		gpu="/sys/devices/platform/mali.0"
-	elif [ -d "/sys/devices/platform/mali-*.0" ]; then
-		gpu="/sys/devices/platform/mali-*.0"
-	elif [ -d "/sys/module/mali/parameters" ]; then
-		gpu="/sys/module/mali/parameters"
-	elif [ -d "/sys/class/misc/mali0" ]; then
-		gpu="/sys/class/misc/mali0"
-	elif [ -d "/sys/kernel/gpu" ]; then
-		gpu="/sys/kernel/gpu"
 	fi
-
-	if [ "$memTotal" -lt 3072 ]; then
-		resetprop ro.hwui.texture_cache_size $((memTotal*10/100/2));
-		resetprop ro.hwui.layer_cache_size $((memTotal*5/100/2));
-		resetprop ro.hwui.path_cache_size $((memTotal*2/100/2));
-		resetprop ro.hwui.r_buffer_cache_size $((memTotal/100/2));
-		resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100/2));
-		resetprop ro.hwui.texture_cache_flushrate 0.3
-	else 
-		resetprop ro.hwui.texture_cache_size $((memTotal*10/100));
-		resetprop ro.hwui.layer_cache_size $((memTotal*5/100));
-		resetprop ro.hwui.path_cache_size $((memTotal*2/100));
-		resetprop ro.hwui.r_buffer_cache_size $((memTotal/100));
-		resetprop ro.hwui.drop_shadow_cache_size $((memTotal/100));
-		resetprop ro.hwui.texture_cache_flushrate 0.3
-	fi
-	sendToLog "Optimized GPU caches";
-
-
-	if [ -e /proc/gpufreq/gpufreq_limited_thermal_ignore ]; then
-		write /proc/gpufreq/gpufreq_limited_thermal_ignore "1"
-		sendToLog "Disabled gpufreq thermal"
-	fi;
-
-	if [ -e /proc/mali/dvfs_enable ]; then
-		write /proc/mali/dvfs_enable "1"
-		sendToLog "dvfs enabled"
-	fi;
-
+	
 	if [ -e /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate ]; then
 		write /sys/module/simple_gpu_algorithm/parameters/simple_gpu_activate "1"
 		sendToLog "Simple GPU algorithm enabled"
 	fi;
-
+	
 	# Adreno idler
 	if [ -e /sys/module/adreno_idler/parameters/adreno_idler_active ]; then
 		write /sys/module/adreno_idler/parameters/adreno_idler_active "Y"
-		write /sys/module/adreno_idler/parameters/adreno_idler_idleworkload "10000"
-		write /sys/module/adreno_idler/parameters/adreno_idler_downdifferential "35"
-		write /sys/module/adreno_idler/parameters/adreno_idler_idlewait "25"
+		
+		if [ "$1" = "1" ]; then
+			write /sys/module/adreno_idler/parameters/adreno_idler_idleworkload "10000"
+			write /sys/module/adreno_idler/parameters/adreno_idler_downdifferential "35"
+			write /sys/module/adreno_idler/parameters/adreno_idler_idlewait "25"
+			
+		elif [ "$1" = "2" ]; then
+			write /sys/module/adreno_idler/parameters/adreno_idler_idleworkload "6000"
+			write /sys/module/adreno_idler/parameters/adreno_idler_downdifferential "15"
+			write /sys/module/adreno_idler/parameters/adreno_idler_idlewait "25"
+			
+		elif [ "$1" = "3" ]; then
+			write /sys/module/adreno_idler/parameters/adreno_idler_idleworkload "5000"
+			write /sys/module/adreno_idler/parameters/adreno_idler_downdifferential "15"
+			write /sys/module/adreno_idler/parameters/adreno_idler_idlewait "15"
+		fi
 		sendToLog "Enabled and tweaked adreno idler"
-	fi;
+	fi
 
+	# Adreni boost 0 for off , 1 for low , 2 for medium , 3 for high
 	if [ -e $gpu/devfreq/adrenoboost ]; then
-		write $gpu/devfreq/adrenoboost "0"
-		sendToLog "Adreno boost is set to 0"
-	fi;
+		if [ "$1" = "1" ]; then
+			write $gpu/devfreq/adrenoboost "0"
+			sendToLog "Adreno boost is set to 0"
+		elif [ "$1" = "2" ]; then
+			write $gpu/devfreq/adrenoboost "1"
+			sendToLog "Adreno boost is set to 1"
+		elif [ "$1" = "3" ]; then
+			write $gpu/devfreq/adrenoboost "2"
+			sendToLog "Adreno boost is set to 2"
+		fi
+	fi
 
+	# GPU freq throttling
 	if [ -e $gpu/throttling ]; then
-		write $gpu/throttling "0"
-		sendToLog "GPU throttling disabled"
-	fi;
-
-	if [ -e $gpu/max_pwrlevel ]; then
-		write $gpu/max_pwrlevel "0"
-		sendToLog "GPU max power level disabled"
-	fi;
-
+		if [ "$1" = "1" ]; then
+			write $gpu/throttling "1"
+			sendToLog "GPU throttling enabled"
+		elif [ "$1" = "2" ]; then
+			write $gpu/throttling "1"
+			sendToLog "GPU throttling enabled"
+		elif [ "$1" = "3" ]; then
+			write $gpu/throttling "0"
+			sendToLog "GPU throttling disabled"
+		fi
+	fi
+	
+	# GPU idle timer, the time after the GPU going idle
+	if [ -e $gpu/idle_time ]; then
+		if [ "$1" = "1" ]; then
+			write $gpu/idle_time "50"
+			sendToLog "Setting GPU idle timer to 50"
+		elif [ "$1" = "2" ]; then
+			write $gpu/idle_time "200"
+			sendToLog "Setting GPU idle timer to 200"
+		elif [ "$1" = "3" ]; then
+			write $gpu/idle_time "1000"
+		sendToLog "Setting GPU idle timer to 1000"
+		fi
+	fi
+	
+	# Setting up the force GPU clock, this will keep clocks on until the idle timeout forces the power rail off
+	if [ -e $gpu/force_clk_on ]; then
+		if [ "$1" = "1" ]; then
+			write $gpu/force_clk_on "0"
+			sendToLog "Force clock disabled"
+		elif [ "$1" = "2" ]; then
+			write $gpu/force_clk_on "0"
+			sendToLog "Force clock disabled"
+		elif [ "$1" = "3" ]; then
+			write $gpu/force_clk_on "1"
+			sendToLog "Force clock enabled"
+		fi
+	fi
+	
+	# Keep the graphics power rail on permanently.
+	# Enabling this can cause a pretty big drainage because the rail(power) is always on, so it'll be just on performance for now!
+	if [ -e $gpu/force_rail_on ]; then
+		if [ "$1" = "1" ]; then
+			write $gpu/force_rail_on "0"
+			sendToLog "force_rail_on disabled"
+		elif [ "$1" = "2" ]; then
+			write $gpu/force_rail_on "0"		
+			sendToLog "force_rail_on disabled"
+		elif [ "$1" = "3" ]; then
+			write $gpu/force_rail_on "1"		
+			sendToLog "force_rail_on enabled"
+		fi
+	fi
+	
 	if [ -e $gpu/force_no_nap ]; then
 		write $gpu/force_no_nap "0"
 		sendToLog "force_no_nap disabled"
-	fi;
+	fi
 
 	if [ -e $gpu/bus_split ]; then
-		write $gpu/bus_split "1"
-		sendToLog "bus_split enabled"
-	fi;
+		if [ "$1" = "1" ]; then
+			write $gpu/bus_split "1"
+			sendToLog "bus_split enabled"
+		elif [ "$1" = "2" ]; then
+			write $gpu/bus_split "1"
+			sendToLog "bus_split enabled"
+		elif [ "$1" = "3" ]; then
+			write $gpu/bus_split "0"
+			sendToLog "bus_split disabled"
+		fi
+	fi
 
+	# Keep the bus vote on permanently, whatever that means I found it in some Qualcomm references
+	# They mention that for full GPU performance it should be turned On. No side-effects
 	if [ -e $gpu/force_bus_on ]; then
-		write $gpu/force_bus_on "0"
-		sendToLog "force_bus_on disabled"
-	fi;
-
-	if [ -e $gpu/force_clk_on ]; then
-		write $gpu/force_clk_on "0"
-		sendToLog "force_clk_on disabled"
-	fi;
-
-	if [ -e $gpu/force_rail_on ]; then
-		write $gpu/force_rail_on "0"
-		sendToLog "force_rail_on disabled"
-	fi;
-
-	sendToLog "Power saving GPU optimization applied"
+		if [ "$1" = "1" ]; then
+			write $gpu/force_bus_on "0"
+			sendToLog "force_bus_on disabled"
+		elif [ "$1" = "2" ]; then
+			write $gpu/force_bus_on "0"		
+			sendToLog "force_bus_on disabled"
+		elif [ "$1" = "3" ]; then
+			write $gpu/force_bus_on "1"		
+			sendToLog "force_bus_on enabled"
+		fi
+	fi
+	
+	sendToLog "GPU optimization has successfully applied $profile profile"
 	sendToLog "$divider";
 }
 
@@ -1325,103 +1755,36 @@ disableIoStats() {
 	sendToLog "$divider";
 }
 
-sdTweak() {
-
-	# Storage blocks eMMC
-	DEV_MMCBLK0="/dev/block/mmcblk0";
-	MMCBLK0="/sys/block/mmcblk0";
-	MMCBLK0_READ_AHEAD_KB="$MMCBLK0/queue/read_ahead_kb";
-	DEV_MMCBLK1="/dev/block/mmcblk1";
-	MMCBLK1="/sys/block/mmcblk1";
-	MMCBLK1_READ_AHEAD_KB="$MMCBLK1/queue/read_ahead_kb";
-
-	# Storage blocks UFS
-	SDA="/sys/block/sda";
-
-	sendToLog "Activating SD speed tweak";
-
-	# On some devices:
-	# SD* and MMCBLK0 is sdcard
-	#
-
-	if [ -e $SDA ] && [ -e $MMCBLK0 ]; then
-
-		sendToLog "SD card mounted on $DEV_MMCBLK0";
-		external_totalSize=$(blockdev --getsize64 $DEV_MMCBLK0);
-
-		if [ "$external_totalSize" -lt 8589934592 ]; then
-			extReadAhead="256";
-		elif [ "$external_totalSize" -ge 8589934592 ] && [ "$external_totalSize" -lt 17179869184 ]; then
-			extReadAhead="512";
-		elif [ "$external_totalSize" -ge 17179869184 ] && [ "$external_totalSize" -lt 34359738368 ]; then
-			extReadAhead="1024";
-		elif [ "$external_totalSize" -ge 34359738368 ]; then
-			extReadAhead="2048";
-		else
-			extReadAhead="256";
-		fi
-
-		sendToLog "Your SD Card size is: $((external_totalSize/1024/1024/1024))kb";
-		sendToLog "Read Ahead based on SD Card size: $((extReadAhead))kb";
-		write $MMCBLK0_READ_AHEAD_KB $extReadAhead;
-		sendToLog "SD speed tweak is activated";
-
-	elif [ -e $SDA ] && [ -e $MMCBLK1 ]; then
-
-		sendToLog "SD card mounted on $DEV_MMCBLK1";
-		external_totalSize=$(blockdev --getsize64 $DEV_MMCBLK1);
-
-		if [ "$external_totalSize" -lt 8589934592 ]; then
-			extReadAhead="256";
-		elif [ "$external_totalSize" -ge 8589934592 ] && [ "$external_totalSize" -lt 17179869184 ]; then
-			extReadAhead="512";
-		elif [ "$external_totalSize" -ge 17179869184 ] && [ "$external_totalSize" -lt 34359738368 ]; then
-			extReadAhead="1024";
-		elif [ "$external_totalSize" -ge 34359738368 ]; then
-			extReadAhead="2048";
-		else
-			extReadAhead="256";
-		fi
-
-		sendToLog "Your SD Card size is: $((external_totalSize/1024/1024/1024))kb";
-		sendToLog "Read Ahead based on SD Card size: $((extReadAhead))kb";
-		write $MMCBLK1_READ_AHEAD_KB $extReadAhead;
-		sendToLog "SD speed tweak is activated";
-		
-	elif [ -e $MMCBLK1 ]; then
-
-		sendToLog "SD card mounted on $DEV_MMCBLK1";
-		external_totalSize=$(blockdev --getsize64 $DEV_MMCBLK1);
-
-		if [ "$external_totalSize" -lt 8589934592 ]; then
-			extReadAhead="256";
-		elif [ "$external_totalSize" -ge 8589934592 ] && [ "$external_totalSize" -lt 17179869184 ]; then
-			extReadAhead="512";
-		elif [ "$external_totalSize" -ge 17179869184 ] && [ "$external_totalSize" -lt 34359738368 ]; then
-			extReadAhead="1024";
-		elif [ "$external_totalSize" -ge 34359738368 ]; then
-			extReadAhead="2048";
-		else
-			extReadAhead="256";
-		fi
-
-		sendToLog "Your SD Card size is: $((external_totalSize/1024/1024/1024))kb";
-		sendToLog "Read Ahead based on SD Card size: $((extReadAhead))kb";
-		write $MMCBLK1_READ_AHEAD_KB $extReadAhead;
-		sendToLog "SD speed tweak is activated";
-
-	else
-		sendToLog "SD card not available or not supported...";
-
+ioBlocksOptimization() {
+	if [ "$1" = "1" ]; then
+		profile="battery"
+	elif [ "$1" = "2" ]; then
+		profile="balanced"
+	elif [ "$1" = "3" ]; then
+		profile="performance"
 	fi
-	sendToLog "$divider";
-}
- 
-ioBlocksOptimizationBalanced() {
-	sendToLog "Activating balanced I/O blocks optimization..."
+	
+	sendToLog "Activating $profile I/O blocks optimization..."
+
+	#This tuning parameter controls the maximum
+	#number of inode table blocks that ext4's inode
+	#table readahead algorithm will pre-read into
+	#the buffer cache.  The default value is 32 blocks.
+	ext4blocks="/sys/fs/ext4/*"
+	for ext4block in $ext4blocks;
+		do
+		if [ -e "$ext4block/inode_readahead_blks" ]; then
+			if [ "$1" = "3" ]; then
+				write "$ext4block/inode_readahead_blks" "64"
+				sendToLog "Pre-read cache of ext4 in $ext4block set to 64"
+			else
+				write "$ext4block/inode_readahead_blks" "32"
+				sendToLog "Pre-read cache of ext4 in $ext4block set to 32"
+			fi
+		fi
+	done
 
 	blocks="/sys/block/*"
-
 	for i in $blocks;
 		do
 		
@@ -1448,99 +1811,23 @@ ioBlocksOptimizationBalanced() {
 		#For storage configurations that need to maximize distribution of completion
 		#processing setting this option to '2' forces the completion to run on the
 		#requesting cpu (bypassing the "group" aggregation logic).
-		if [ -e "$i/queue/rq_affinity" ]; then
-			write "$i/queue/rq_affinity" "1"
-			sendToLog "rq_affinity=1 in $i"
-		fi
+		if [ "$1" = "1" ]; then
+			if [ -e "$i/queue/rq_affinity" ]; then
+				write "$i/queue/rq_affinity" "1"
+				sendToLog "rq_affinity=1 in $i"
+			fi
 		
-		#This controls how many requests may be allocated in the block layer for
-		#read or write requests. Note that the total allocated number may be twice
-		#this amount, since it applies only to reads or writes (not the accumulated
-		#sum).
-		#To avoid priority inversion through request starvation, a request
-		#queue maintains a separate request pool per each cgroup when
-		#CONFIG_BLK_CGROUP is enabled, and this parameter applies to each such
-		#per-block-cgroup request pool.  IOW, if there are N block cgroups,
-		#each request queue may have up to N request pools, each independently
-		#regulated by nr_requests.
-		if [ -e "$i/queue/nr_requests" ]; then
-			write "$i/queue/nr_requests" "128"
-			sendToLog "nr_requests=128 in $i"
-		fi
-		
-		#Maximum number of kilobytes to read-ahead for filesystems on this block
-		#device.
-		if [ -e "$i/queue/read_ahead_kb" ]; then
-			write "$i/queue/read_ahead_kb" "128"
-			sendToLog "read_ahead_kb=128 in $i"
-		fi
-		
-		# Tell scheduler that it's facing with non rotational drive to disable
-		# unnecessary seek-reducing logic in the scheduler. We are not using rotational HDDs
-		if [ -e "$i/queue/rotational" ]; then
-			write "$i/queue/rotational" "0"
-			sendToLog "rotational=0 in $i"
-		fi
-		
-	done
-
-	# MMC CRC disabled
-	removable=/sys/module/mmc_core/parameters/removable
-	if [ -e $removable ]; then
-		write $removable "N"
-		sendToLog "CRC Checks disabled $removable"
-	fi;
-
-	crc=/sys/module/mmc_core/parameters/crc
-	if [ -e $crc ]; then
-		write $crc "N"
-		sendToLog "CRC Checks disabled $crc"
-	fi;
-
-	use_spi_crc=/sys/module/mmc_core/parameters/use_spi_crc
-	if [ -e $use_spi_crc ]; then
-		write $use_spi_crc "N"
-		sendToLog "CRC Checks disabled $use_spi_crc"
-	fi;
-
-	sendToLog "Balanced I/O blocks optimization activated"
-	sendToLog "$divider";
-}
-
-ioBlocksOptimizationPerformance() {
-	sendToLog "Activating performance I/O blocks optimization..."
-
-	blocks="/sys/block/*"
-
-	for i in $blocks;
-		do
-		
-		#This file allows to turn off the disk entropy contribution. Default
-		#value of this file is '1'(on).
-		if [ -e "$i/queue/add_random" ]; then
-			write "$i/queue/add_random" "0"
-			sendToLog "add_random=0 in $i"
-		fi
-		
-		#This enables the user to disable the lookup logic involved with IO
-		#merging requests in the block layer. By default (0) all merges are
-		#enabled. When set to 1 only simple one-hit merges will be tried. When
-		#set to 2 no merge algorithms will be tried (including one-hit or more
-		#complex tree/hash lookups).
-		if [ -e "$i/queue/nomerges" ]; then
-			write "$i/queue/nomerges" "1"
-			sendToLog "nomerges=1 in $i"
-		fi
+		elif [ "$1" = "2" ]; then
+			if [ -e "$i/queue/rq_affinity" ]; then
+				write "$i/queue/rq_affinity" "1"
+				sendToLog "rq_affinity=1 in $i"
+			fi
 			
-		#If this option is '1', the block layer will migrate request completions to the
-		#cpu "group" that originally submitted the request. For some workloads this
-		#provides a significant reduction in CPU cycles due to caching effects.
-		#For storage configurations that need to maximize distribution of completion
-		#processing setting this option to '2' forces the completion to run on the
-		#requesting cpu (bypassing the "group" aggregation logic).
-		if [ -e "$i/queue/rq_affinity" ]; then
-			write "$i/queue/rq_affinity" "2"
-			sendToLog "rq_affinity=2 in $i"
+		elif [ "$1" = "3" ]; then
+			if [ -e "$i/queue/rq_affinity" ]; then
+				write "$i/queue/rq_affinity" "2"
+				sendToLog "rq_affinity=2 in $i"
+			fi	
 		fi
 		
 		#This controls how many requests may be allocated in the block layer for
@@ -1553,16 +1840,129 @@ ioBlocksOptimizationPerformance() {
 		#per-block-cgroup request pool.  IOW, if there are N block cgroups,
 		#each request queue may have up to N request pools, each independently
 		#regulated by nr_requests.
-		if [ -e "$i/queue/nr_requests" ]; then
-			write "$i/queue/nr_requests" "256"
-			sendToLog "nr_requests=256 in $i"
+		if [ "$1" = "1" ]; then
+			if [ -e "$i/queue/nr_requests" ]; then
+				write "$i/queue/nr_requests" "64"
+				sendToLog "nr_requests=64 in $i"
+			fi
+		
+		elif [ "$1" = "2" ]; then
+			if [ -e "$i/queue/nr_requests" ]; then
+				write "$i/queue/nr_requests" "128"
+				sendToLog "nr_requests=128 in $i"
+			fi
+			
+		elif [ "$1" = "3" ]; then
+			if [ -e "$i/queue/nr_requests" ]; then
+				write "$i/queue/nr_requests" "128"
+				sendToLog "nr_requests=128 in $i"
+			fi	
 		fi
 		
 		#Maximum number of kilobytes to read-ahead for filesystems on this block
 		#device.
-		if [ -e "$i/queue/read_ahead_kb" ]; then
-			write "$i/queue/read_ahead_kb" "256"
-			sendToLog "read_ahead_kb=256 in $i"
+		if [ "$1" = "1" ]; then
+			case $i in 
+			*"/sys/block/sd"*) 
+				if [ -e "$i/queue/read_ahead_kb" ]; then
+					write "$i/queue/read_ahead_kb" "256"
+					sendToLog "read_ahead_kb=256 in $i"
+				fi
+			;;
+			*"/sys/block/dm-"*) 
+				if [ -e "$i/queue/read_ahead_kb" ]; then
+					write "$i/queue/read_ahead_kb" "256"
+					sendToLog "read_ahead_kb=256 in $i"
+				fi
+			;;
+			"/sys/block/mmcblk0") 
+				if [ -e "$i/queue/read_ahead_kb" ]; then
+					write "$i/queue/read_ahead_kb" "256"
+					sendToLog "read_ahead_kb=256 in $i"
+				fi
+			;;
+			"/sys/block/mmcblk1") 
+				if [ -e "$i/queue/read_ahead_kb" ]; then
+					write "$i/queue/read_ahead_kb" "256"
+					sendToLog "read_ahead_kb=256 in $i"
+				fi
+			;;
+			*) 
+				if [ -e "$i/queue/read_ahead_kb" ]; then
+					write "$i/queue/read_ahead_kb" "128"
+					sendToLog "read_ahead_kb=128 in $i"
+				fi 
+			;;
+			esac
+		
+		elif [ "$1" = "2" ]; then
+			case $i in 
+			*"/sys/block/sd"*) 
+				if [ -e "$i/queue/read_ahead_kb" ]; then
+					write "$i/queue/read_ahead_kb" "512"
+					sendToLog "read_ahead_kb=512 in $i"
+				fi
+			;;
+			*"/sys/block/dm-"*) 
+				if [ -e "$i/queue/read_ahead_kb" ]; then
+					write "$i/queue/read_ahead_kb" "512"
+					sendToLog "read_ahead_kb=512 in $i"
+				fi
+			;;
+			"/sys/block/mmcblk0") 
+				if [ -e "$i/queue/read_ahead_kb" ]; then
+					write "$i/queue/read_ahead_kb" "512"
+					sendToLog "read_ahead_kb=512 in $i"
+				fi
+			;;
+			"/sys/block/mmcblk1") 
+				if [ -e "$i/queue/read_ahead_kb" ]; then
+					write "$i/queue/read_ahead_kb" "512"
+					sendToLog "read_ahead_kb=512 in $i"
+				fi
+			;;
+			*) 
+				if [ -e "$i/queue/read_ahead_kb" ]; then
+					write "$i/queue/read_ahead_kb" "128"
+					sendToLog "read_ahead_kb=128 in $i"
+				fi 
+			;;
+			esac
+			
+		elif [ "$1" = "3" ]; then
+			case $i in 
+			*"/sys/block/sd"*) 
+				if [ -e "$i/queue/read_ahead_kb" ]; then
+					write "$i/queue/read_ahead_kb" "1024"
+					sendToLog "read_ahead_kb=1024 in $i"
+				fi
+				
+			;;
+			*"/sys/block/dm-"*) 
+				if [ -e "$i/queue/read_ahead_kb" ]; then
+					write "$i/queue/read_ahead_kb" "1024"
+					sendToLog "read_ahead_kb=1024 in $i"
+				fi
+			;;
+			"/sys/block/mmcblk0") 
+				if [ -e "$i/queue/read_ahead_kb" ]; then
+					write "$i/queue/read_ahead_kb" "1024"
+					sendToLog "read_ahead_kb=1024 in $i"
+				fi
+			;;
+			"/sys/block/mmcblk1") 
+				if [ -e "$i/queue/read_ahead_kb" ]; then
+					write "$i/queue/read_ahead_kb" "1024"
+					sendToLog "read_ahead_kb=1024 in $i"
+				fi
+			;;
+			*) 
+				if [ -e "$i/queue/read_ahead_kb" ]; then
+					write "$i/queue/read_ahead_kb" "256"
+					sendToLog "read_ahead_kb=256 in $i"
+				fi 
+			;;
+			esac
 		fi
 		
 		# Tell scheduler that it's facing with non rotational drive to disable
@@ -1571,7 +1971,7 @@ ioBlocksOptimizationPerformance() {
 			write "$i/queue/rotational" "0"
 			sendToLog "rotational=0 in $i"
 		fi
-		
+
 	done
 
 	# MMC CRC disabled
@@ -1593,97 +1993,7 @@ ioBlocksOptimizationPerformance() {
 		sendToLog "CRC Checks disabled $use_spi_crc"
 	fi;
 
-	sendToLog "Performance I/O blocks optimization activated"
-	sendToLog "$divider";
-}
-
-ioBlocksOptimizationPowerSaving() {
-	sendToLog "Activating power saving I/O blocks optimization..."
-
-	blocks="/sys/block/*"
-
-	for i in $blocks;
-		do
-		
-		#This file allows to turn off the disk entropy contribution. Default
-		#value of this file is '1'(on).
-		if [ -e "$i/queue/add_random" ]; then
-			write "$i/queue/add_random" "0"
-			sendToLog "add_random=0 in $i"
-		fi
-		
-		#This enables the user to disable the lookup logic involved with IO
-		#merging requests in the block layer. By default (0) all merges are
-		#enabled. When set to 1 only simple one-hit merges will be tried. When
-		#set to 2 no merge algorithms will be tried (including one-hit or more
-		#complex tree/hash lookups).
-		if [ -e "$i/queue/nomerges" ]; then
-			write "$i/queue/nomerges" "2"
-			sendToLog "nomerges=2 in $i"
-		fi
-		
-		#If this option is '1', the block layer will migrate request completions to the
-		#cpu "group" that originally submitted the request. For some workloads this
-		#provides a significant reduction in CPU cycles due to caching effects.
-		#For storage configurations that need to maximize distribution of completion
-		#processing setting this option to '2' forces the completion to run on the
-		#requesting cpu (bypassing the "group" aggregation logic).
-		if [ -e "$i/queue/rq_affinity" ]; then
-			write "$i/queue/rq_affinity" "1"
-			sendToLog "rq_affinity=1 in $i"
-		fi
-		
-		#This controls how many requests may be allocated in the block layer for
-		#read or write requests. Note that the total allocated number may be twice
-		#this amount, since it applies only to reads or writes (not the accumulated
-		#sum).
-		#To avoid priority inversion through request starvation, a request
-		#queue maintains a separate request pool per each cgroup when
-		#CONFIG_BLK_CGROUP is enabled, and this parameter applies to each such
-		#per-block-cgroup request pool.  IOW, if there are N block cgroups,
-		#each request queue may have up to N request pools, each independently
-		#regulated by nr_requests.
-		if [ -e "$i/queue/nr_requests" ]; then
-			write "$i/queue/nr_requests" "64"
-			sendToLog "nr_requests=64 in $i"
-		fi
-		
-		#Maximum number of kilobytes to read-ahead for filesystems on this block
-		#device.
-		if [ -e "$i/queue/read_ahead_kb" ]; then
-			write "$i/queue/read_ahead_kb" "128"
-			sendToLog "read_ahead_kb=128 in $i"
-		fi
-
-		# Tell scheduler that it's facing with non rotational drive to disable
-		# unnecessary seek-reducing logic in the scheduler. We are not using rotational HDDs
-		if [ -e "$i/queue/rotational" ]; then
-			write "$i/queue/rotational" "0"
-			sendToLog "rotational=0 in $i"
-		fi
-		
-	done
-
-	# MMC CRC disabled
-	removable=/sys/module/mmc_core/parameters/removable
-	if [ -e $removable ]; then
-		write $removable "N"
-		sendToLog "CRC Checks disabled $removable"
-	fi;
-
-	crc=/sys/module/mmc_core/parameters/crc
-	if [ -e $crc ]; then
-		write $crc "N"
-		sendToLog "CRC Checks disabled $crc"
-	fi;
-
-	use_spi_crc=/sys/module/mmc_core/parameters/use_spi_crc
-	if [ -e $use_spi_crc ]; then
-		write $use_spi_crc "N"
-		sendToLog "CRC Checks disabled $use_spi_crc"
-	fi;
-
-	sendToLog "Power saving I/O blocks optimization activated"
+	sendToLog "Activating of $profile I/O blocks optimization is successful"
 	sendToLog "$divider";
 }
 
@@ -1848,8 +2158,8 @@ for i in $blocks;
 		fi
 		
 		if [ -e "$QUANTUM" ]; then
-			write "$QUANTUM" "8"
-			sendToLog "quantum=8 in $i"
+			write "$QUANTUM" "16"
+			sendToLog "quantum=16 in $i"
 		fi
 		
 		if [ -e "$SLICE_ASYNC" ]; then
@@ -2051,8 +2361,8 @@ for i in $blocks;
 		fi
 		
 		if [ -e "$ASYNC_WRITE_EXPIRE" ]; then
-			write "$ASYNC_WRITE_EXPIRE" "2000"
-			sendToLog "async_write_expire=2000 in $i"
+			write "$ASYNC_WRITE_EXPIRE" "1500"
+			sendToLog "async_write_expire=1500 in $i"
 		fi
 		
 		if [ -e "$FIFO_BATCH" ]; then
@@ -2103,77 +2413,35 @@ for i in $blocks;
 	sendToLog "$divider";
 }
 
-dnsOptimizationCloudFlare() {
-	sendToLog "Activating DNS optimization..."
+dnsCloudFlare() {
+	sendToLog "Activating CloudFlare DNS..."
 
-	iptables -t nat -A OUTPUT -p udp --dport 53 -j DNAT --to 1.0.0.1:53
-	iptables -t nat -I OUTPUT -p udp --dport 53 -j DNAT --to 1.0.0.1:53
-	iptables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to 1.1.1.1:53
-	iptables -t nat -I OUTPUT -p tcp --dport 53 -j DNAT --to 1.1.1.1:53
-	ip6tables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to  2606:4700:4700::1111
-	ip6tables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to  2606:4700:4700::1001
-	ip6tables -t nat -I OUTPUT -p tcp --dport 53 -j DNAT --to  2606:4700:4700::1111
-	ip6tables -t nat -I OUTPUT -p udp --dport 53 -j DNAT --to  2606:4700:4700::1001
+	iptables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to-destination 1.1.1.1:53
+	iptables -t nat -A OUTPUT -p udp --dport 53 -j DNAT --to-destination 1.0.0.1:53
+	iptables -t nat -I OUTPUT -p tcp --dport 53 -j DNAT --to-destination 1.1.1.1:53
+	iptables -t nat -I OUTPUT -p udp --dport 53 -j DNAT --to-destination 1.0.0.1:53
 
-	setprop net.eth0.dns1 1.1.1.1
-	setprop net.eth0.dns2 1.0.0.1
-	setprop net.dns1 1.1.1.1
-	setprop net.dns2 1.0.0.1
-	setprop net.ppp0.dns1 1.1.1.1
-	setprop net.ppp0.dns2 1.0.0.1
-	setprop net.rmnet0.dns1 1.1.1.1
-	setprop net.rmnet0.dns2 1.0.0.1
-	setprop net.rmnet1.dns1 1.1.1.1
-	setprop net.rmnet1.dns2 1.0.0.1
-	setprop net.rmnet2.dns1 1.1.1.1
-	setprop net.rmnet2.dns2 1.0.0.1
-	setprop net.pdpbr1.dns1 1.1.1.1
-	setprop net.pdpbr1.dns2 1.0.0.1
-	setprop net.wlan0.dns1 1.1.1.1
-	setprop net.wlan0.dns2 1.0.0.1
-	setprop 2606:4700:4700::1111
-	setprop 2606:4700:4700::1001
-
-	sendToLog "Changing DNS to CloudFlare"
-
-	sendToLog "DNS optimization is activated"
+	sendToLog "CloudFlare DNS is activated"
 	sendToLog "$divider";
 }
 
-dnsOptimizationGooglePublic() {
-	sendToLog "Activating DNS optimization..."
+dnsGooglePublic() {
+	sendToLog "Activating Google DNS..."
 
-	iptables -t nat -A OUTPUT -p udp --dport 53 -j DNAT --to 8.8.8.8:53
-	iptables -t nat -I OUTPUT -p udp --dport 53 -j DNAT --to 8.8.4.4:53
-	iptables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to 8.8.8.8:53
-	iptables -t nat -I OUTPUT -p tcp --dport 53 -j DNAT --to 8.8.4.4:53
-	ip6tables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to 2001:4860:4860:8888
-	ip6tables -t nat -I OUTPUT -p tcp --dport 53 -j DNAT --to 2001:4860:4860:8888
-	ip6tables -t nat -A OUTPUT -p udp --dport 53 -j DNAT --to 2001:4860:4860:8844
-	ip6tables -t nat -I OUTPUT -p udp --dport 53 -j DNAT --to 2001:4860:4860:8844
+	iptables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to-destination 208.67.222.222:53
+	iptables -t nat -A OUTPUT -p udp --dport 53 -j DNAT --to-destination 208.67.222.222:53
 
-	setprop net.eth0.dns1 8.8.8.8
-	setprop net.eth0.dns2 8.8.4.4
-	setprop net.dns1 8.8.8.8
-	setprop net.dns2 8.8.4.4
-	setprop net.ppp0.dns1 8.8.8.8
-	setprop net.ppp0.dns2 8.8.4.4
-	setprop net.rmnet0.dns1 8.8.8.8
-	setprop net.rmnet0.dns2 8.8.4.4
-	setprop net.rmnet1.dns1 8.8.8.8
-	setprop net.rmnet1.dns2 8.8.4.4
-	setprop net.rmnet2.dns1 8.8.8.8
-	setprop net.rmnet2.dns2 8.8.4.4
-	setprop net.pdpbr1.dns1 8.8.8.8
-	setprop net.pdpbr1.dns2 8.8.4.4
-	setprop net.wlan0.dns1 8.8.8.8
-	setprop net.wlan0.dns2 8.8.4.4
-	setprop 2001:4860:4860::8888
-	setprop 2001:4860:4860::8844
+	sendToLog "Google DNS is activated"
+	sendToLog "$divider";
+}
 
-	sendToLog "Changing DNS to Google Public"
+dnsOpenDNS() {
+	sendToLog "Activating Open DNS..."
 
-	sendToLog "DNS optimization is activated"
+	iptables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to-destination 8.8.8.8:53
+	iptables -t nat -A OUTPUT -p udp --dport 53 -j DNAT --to-destination 8.8.8.8:53
+
+	sendToLog "Open DNS is activated"
 	sendToLog "$divider";
 }
 
@@ -2531,21 +2799,18 @@ disableMultitaskingLimitations() {
 	sendToLog "$divider";
 }
 
-lowRamFlagDisabled() {
-	sendToLog "Disabling low RAM flag..."
-
-	resetprop ro.config.low_ram false
-
-	sendToLog "Low RAM flag disabled"
-	sendToLog "$divider";
-}
-
-lowRamFlagEnabled() {
-	sendToLog "Enabling low RAM flag..."
-
-	resetprop ro.config.low_ram true
-
-	sendToLog "Low RAM flag enabled"
+lowRamFlag() {
+	if [ "$1" = "0" ]; then
+		sendToLog "Disabling low RAM flag..."
+		resetprop ro.config.low_ram false
+		sendToLog "Low RAM flag disabled"
+		
+	elif [ "$1" = "1" ]; then
+		sendToLog "Enabling low RAM flag..."
+		resetprop ro.config.low_ram true
+		sendToLog "Low RAM flag enabled"
+	fi
+		
 	sendToLog "$divider";
 }
 
@@ -2962,436 +3227,231 @@ swappinessTendency() {
 	sendToLog "$divider";
 }
 
-virtualMemoryTweaksBalanced() {
-sendToLog "Activating balanced virtual memory tweaks..."
+virtualMemoryTweaks() {
+	if [ "$1" = "1" ]; then
+		profile="battery"
+	elif [ "$1" = "2" ]; then
+		profile="balanced"
+	elif [ "$1" = "3" ]; then
+		profile="performance"
+	fi
 
-sync
+	sendToLog "Activating $profile virtual memory tweaks..."
 
-leases_enable=/proc/sys/fs/leases-enable
-if [ -e $leases_enable ]; then
-	write $leases_enable "1"		
-	sendToLog "leases_enable=1"
-fi;
+	sync
 
-# This file specifies the grace period (in seconds) that the kernel grants
-# to a process holding a file lease after it has sent a signal to that process
-# notifying it that another process is waiting to open the file.
-# If the lease holder does not remove or downgrade the lease within this grace period,
-# the kernel forcibly breaks the lease.
-lease_break_time=/proc/sys/fs/lease-break-time
-if [ -e $lease_break_time ]; then
-	write $lease_break_time "20"		
-	sendToLog "lease_break_time=20"
-fi;
+	leases_enable=/proc/sys/fs/leases-enable
+	if [ -e $leases_enable ]; then
+		write $leases_enable "1"		
+		sendToLog "leases_enable=1"
+	fi;
 
-# dnotify is a signal used to notify a process about file/directory changes.
-dir_notify_enable=/proc/sys/fs/dir-notify-enable
-if [ -e $dir_notify_enable ]; then
-	write $dir_notify_enable "0"		
-	sendToLog "dir_notify_enable=0"
-fi;
+	# This file specifies the grace period (in seconds) that the kernel grants
+	# to a process holding a file lease after it has sent a signal to that process
+	# notifying it that another process is waiting to open the file.
+	# If the lease holder does not remove or downgrade the lease within this grace period,
+	# the kernel forcibly breaks the lease.
 
-sendToLog "File system parameters are updated"
+	lease_break_time=/proc/sys/fs/lease-break-time
+	if [ -e $lease_break_time ]; then
+		write $lease_break_time "20"		
+		sendToLog "lease_break_time=20"
+	fi;
 
-enable_process_reclaim=/sys/module/process_reclaim/parameters/enable_process_reclaim
-if [ -e $enable_process_reclaim ]; then
-	write $enable_process_reclaim "0"		
-	sendToLog "Reclaiming pages of inactive tasks disabled"
-fi;
+	# dnotify is a signal used to notify a process about file/directory changes.
+	dir_notify_enable=/proc/sys/fs/dir-notify-enable
+	if [ -e $dir_notify_enable ]; then
+		write $dir_notify_enable "0"		
+		sendToLog "dir_notify_enable=0"
+	fi;
 
-# This parameter tells how much of physical RAM to take when swap is full
-overcommit_ratio=/proc/sys/vm/overcommit_ratio
-if [ -e overcommit_ratio ]; then
-	write $overcommit_ratio "0"		
-	sendToLog "overcommit_ratio=0"
-fi;
+	sendToLog "File system parameters are updated"
 
-oom_dump_tasks=/proc/sys/vm/oom_dump_tasks
-if [ -e $oom_dump_tasks ]; then
-	write $oom_dump_tasks "0"		
-	sendToLog "OOM dump tasks are disabled"
-fi;
+	enable_process_reclaim=/sys/module/process_reclaim/parameters/enable_process_reclaim
+	if [ -e $enable_process_reclaim ]; then
+		write $enable_process_reclaim "0"		
+		sendToLog "Reclaiming pages of inactive tasks disabled"
+	fi;
 
-vfs_cache_pressure=/proc/sys/vm/vfs_cache_pressure
-if [ -e $vfs_cache_pressure ]; then
-	write $vfs_cache_pressure "60"		
-	sendToLog "vfs_cache_pressure=60"
-fi;
+	# This parameter tells how much of physical RAM to take when swap is full
+	overcommit_ratio=/proc/sys/vm/overcommit_ratio
+	if [ -e overcommit_ratio ]; then
+		write $overcommit_ratio "0"		
+		sendToLog "overcommit_ratio=0"
+	fi;
 
-laptop_mode=/proc/sys/vm/laptop_mode
-if [ -e $laptop_mode ]; then
-	write $laptop_mode "0"		
-	sendToLog "laptop_mode=0"
-fi;
+	oom_dump_tasks=/proc/sys/vm/oom_dump_tasks
+	if [ -e $oom_dump_tasks ]; then
+		write $oom_dump_tasks "0"		
+		sendToLog "OOM dump tasks are disabled"
+	fi;
 
-# page-cluster controls the number of pages up to which consecutive pages
-# are read in from swap in a single attempt. This is the swap counterpart
-# to page cache readahead.
-# The mentioned consecutivity is not in terms of virtual/physical addresses,
-# but consecutive on swap space - that means they were swapped out together.
-# It is a logarithmic value - setting it to zero means "1 page", setting
-# it to 1 means "2 pages", setting it to 2 means "4 pages", etc.
-# Zero disables swap readahead completely.
-# The default value is three (eight pages at a time).  There may be some
-# small benefits in tuning this to a different value if your workload is
-# swap-intensive.
-# Lower values mean lower latencies for initial faults, but at the same time
-# extra faults and I/O delays for following faults if they would have been part of
-# that consecutive pages readahead would have brought in.
-page_cluster=/proc/sys/vm/page-cluster
-if [ -e $page_cluster ]; then
-	write $page_cluster "0"		
-	sendToLog "page_cluster=0"
-fi;
+	vfs_cache_pressure=/proc/sys/vm/vfs_cache_pressure
+	if [ -e $vfs_cache_pressure ]; then
+		if [ "$1" = "1" ]; then
+			write $vfs_cache_pressure "20"		
+			sendToLog "vfs_cache_pressure=20"
+			
+		elif [ "$1" = "2" ]; then
+			write $vfs_cache_pressure "75"		
+			sendToLog "vfs_cache_pressure=75"
+			
+		elif [ "$1" = "3" ]; then
+			write $vfs_cache_pressure "100"		
+			sendToLog "vfs_cache_pressure=100"
+		fi
+	fi
 
-# vm.dirty_expire_centisecs is how long something can be in cache
-# before it needs to be written.
-# When the pdflush/flush/kdmflush processes kick in they will
-# check to see how old a dirty page is, and if it’s older than this value it’ll
-# be written asynchronously to disk. Since holding a dirty page in memory is
-# unsafe this is also a safeguard against data loss.
-dirty_expire_centisecs=/proc/sys/vm/dirty_expire_centisecs
-if [ -e $dirty_expire_centisecs ]; then
-	write $dirty_expire_centisecs "300"		
-	sendToLog "dirty_expire_centisecs=300"
-fi;
+	laptop_mode=/proc/sys/vm/laptop_mode
+	if [ -e $laptop_mode ]; then
+		write $laptop_mode "0"		
+		sendToLog "laptop_mode=0"
+	fi;
 
-# vm.dirty_writeback_centisecs is how often the pdflush/flush/kdmflush processes wake up
-# and check to see if work needs to be done.
-dirty_writeback_centisecs=/proc/sys/vm/dirty_writeback_centisecs
-if [ -e $dirty_writeback_centisecs ]; then
-	write $dirty_writeback_centisecs "700"		
-	sendToLog "dirty_writeback_centisecs=700"
-fi;
+	# page-cluster controls the number of pages up to which consecutive pages
+	# are read in from swap in a single attempt. This is the swap counterpart
+	# to page cache readahead.
+	# The mentioned consecutivity is not in terms of virtual/physical addresses,
+	# but consecutive on swap space - that means they were swapped out together.
+	# It is a logarithmic value - setting it to zero means "1 page", setting
+	# it to 1 means "2 pages", setting it to 2 means "4 pages", etc.
+	# Zero disables swap readahead completely.
+	# The default value is three (eight pages at a time).  There may be some
+	# small benefits in tuning this to a different value if your workload is
+	# swap-intensive.
+	# Lower values mean lower latencies for initial faults, but at the same time
+	# extra faults and I/O delays for following faults if they would have been part of
+	# that consecutive pages readahead would have brought in.
+	page_cluster=/proc/sys/vm/page-cluster
+	if [ -e $page_cluster ]; then
+		write $page_cluster "0"		
+		sendToLog "page_cluster=0"
+	fi;
 
-# vm.dirty_background_ratio is the percentage of system memory(RAM)
-# that can be filled with “dirty” pages — memory pages that
-# still need to be written to disk — before the pdflush/flush/kdmflush
-# background processes kick in to write it to disk.
-# It can be 50% or less of dirtyRatio
-# If ( dirty_background_ratio >= dirty_ratio ) {
-# dirty_background_ratio = dirty_ratio / 2 (or 4)
-dirty_background_ratio=/proc/sys/vm/dirty_background_ratio
-if [ -e $dirty_background_ratio ]; then
-	write $dirty_background_ratio "5"		
-	sendToLog "dirty_background_ratio=5"
-fi;
+	# vm.dirty_expire_centisecs is how long something can be in cache
+	# before it needs to be written.
+	# When the pdflush/flush/kdmflush processes kick in they will
+	# check to see how old a dirty page is, and if it’s older than this value it’ll
+	# be written asynchronously to disk. Since holding a dirty page in memory is
+	# unsafe this is also a safeguard against data loss.
+	dirty_expire_centisecs=/proc/sys/vm/dirty_expire_centisecs
+	if [ -e $dirty_expire_centisecs ]; then
+		if [ "$1" = "1" ]; then
+			write $dirty_expire_centisecs "500"		
+			sendToLog "dirty_expire_centisecs=500"
+			
+		elif [ "$1" = "2" ]; then
+			write $dirty_expire_centisecs "300"		
+			sendToLog "dirty_expire_centisecs=300"
+			
+		elif [ "$1" = "3" ]; then
+			write $dirty_expire_centisecs "250"		
+			sendToLog "dirty_expire_centisecs=250"
+		fi
+	fi;
 
-# vm.dirty_ratio is the absolute maximum amount of system memory
-# that can be filled with dirty pages before everything must get committed to disk.
-# When the system gets to this point all new I/O blocks until dirty pages
-# have been written to disk. This is often the source of long I/O pauses,
-# but is a safeguard against too much data being cached unsafely in memory.
-dirty_ratio=/proc/sys/vm/dirty_ratio
-if [ -e $dirty_ratio ]; then
-	write $dirty_ratio "25"		
-	sendToLog "dirty_ratio=25"
-fi;
+	# vm.dirty_writeback_centisecs is how often the pdflush/flush/kdmflush processes wake up
+	# and check to see if work needs to be done.
+	dirty_writeback_centisecs=/proc/sys/vm/dirty_writeback_centisecs
+	if [ -e $dirty_writeback_centisecs ]; then
+		if [ "$1" = "1" ]; then
+			write $dirty_writeback_centisecs "5000"		
+			sendToLog "dirty_writeback_centisecs=5000"
+			
+		elif [ "$1" = "2" ]; then
+			write $dirty_writeback_centisecs "2000"		
+			sendToLog "dirty_writeback_centisecs=2000"
+			
+		elif [ "$1" = "3" ]; then
+			write $dirty_writeback_centisecs "1000"		
+			sendToLog "dirty_writeback_centisecs=1000"
+		fi
+	fi
 
-sendToLog "Balanced virtual memory tweaks activated"
-sendToLog "$divider";
-}
+	# vm.dirty_background_ratio is the percentage of system memory(RAM)
+	# that can be filled with “dirty” pages — memory pages that
+	# still need to be written to disk — before the pdflush/flush/kdmflush
+	# background processes kick in to write it to disk.
+	# It can be 50% or less of dirtyRatio
+	# If ( dirty_background_ratio >= dirty_ratio ) {
+	# dirty_background_ratio = dirty_ratio / 2 (or 4)
+	dirty_background_ratio=/proc/sys/vm/dirty_background_ratio
+	if [ -e $dirty_background_ratio ]; then
+		if [ "$1" = "1" ]; then
+			write $dirty_background_ratio "10"		
+			sendToLog "dirty_background_ratio=10"
+		elif [ "$1" = "2" ]; then
+			write $dirty_background_ratio "5"		
+			sendToLog "dirty_background_ratio=5"
+		elif [ "$1" = "3" ]; then
+			write $dirty_background_ratio "5"		
+			sendToLog "dirty_background_ratio=5"
+		fi
+	fi
 
-virtualMemoryTweaksBattery() {
-sendToLog "Activating battery virtual memory tweaks..."
+	# vm.dirty_ratio is the absolute maximum amount of system memory
+	# that can be filled with dirty pages before everything must get committed to disk.
+	# When the system gets to this point all new I/O blocks until dirty pages
+	# have been written to disk. This is often the source of long I/O pauses,
+	# but is a safeguard against too much data being cached unsafely in memory.
+	dirty_ratio=/proc/sys/vm/dirty_ratio
+	if [ -e $dirty_ratio ]; then
+		if [ "$1" = "1" ]; then
+			write $dirty_ratio "20"		
+			sendToLog "dirty_ratio=20"
+			
+		elif [ "$1" = "2" ]; then
+			write $dirty_ratio "20"		
+			sendToLog "dirty_ratio=20"
+			
+		elif [ "$1" = "3" ]; then
+			write $dirty_ratio "10"		
+			sendToLog "dirty_ratio=10"
+		fi
+	fi
 
-sync
-
-leases_enable=/proc/sys/fs/leases-enable
-if [ -e $leases_enable ]; then
-	write $leases_enable "1"		
-	sendToLog "leases_enable=1"
-fi;
-
-# This file specifies the grace period (in seconds) that the kernel grants
-# to a process holding a file lease after it has sent a signal to that process
-# notifying it that another process is waiting to open the file.
-# If the lease holder does not remove or downgrade the lease within this grace period,
-# the kernel forcibly breaks the lease.
-
-lease_break_time=/proc/sys/fs/lease-break-time
-if [ -e $lease_break_time ]; then
-	write $lease_break_time "20"		
-	sendToLog "lease_break_time=20"
-fi;
-
-# dnotify is a signal used to notify a process about file/directory changes.
-dir_notify_enable=/proc/sys/fs/dir-notify-enable
-if [ -e $dir_notify_enable ]; then
-	write $dir_notify_enable "0"		
-	sendToLog "dir_notify_enable=0"
-fi;
-
-sendToLog "File system parameters are updated"
-
-enable_process_reclaim=/sys/module/process_reclaim/parameters/enable_process_reclaim
-if [ -e $enable_process_reclaim ]; then
-	write $enable_process_reclaim "0"		
-	sendToLog "Reclaiming pages of inactive tasks disabled"
-fi;
-
-# This parameter tells how much of physical RAM to take when swap is full
-overcommit_ratio=/proc/sys/vm/overcommit_ratio
-if [ -e overcommit_ratio ]; then
-	write $overcommit_ratio "0"		
-	sendToLog "overcommit_ratio=0"
-fi;
-
-oom_dump_tasks=/proc/sys/vm/oom_dump_tasks
-if [ -e $oom_dump_tasks ]; then
-	write $oom_dump_tasks "0"		
-	sendToLog "OOM dump tasks are disabled"
-fi;
-
-vfs_cache_pressure=/proc/sys/vm/vfs_cache_pressure
-if [ -e $vfs_cache_pressure ]; then
-	write $vfs_cache_pressure "40"		
-	sendToLog "vfs_cache_pressure=40"
-fi;
-
-laptop_mode=/proc/sys/vm/laptop_mode
-if [ -e $laptop_mode ]; then
-	write $laptop_mode "0"		
-	sendToLog "laptop_mode=0"
-fi;
-
-# page-cluster controls the number of pages up to which consecutive pages
-# are read in from swap in a single attempt. This is the swap counterpart
-# to page cache readahead.
-# The mentioned consecutivity is not in terms of virtual/physical addresses,
-# but consecutive on swap space - that means they were swapped out together.
-# It is a logarithmic value - setting it to zero means "1 page", setting
-# it to 1 means "2 pages", setting it to 2 means "4 pages", etc.
-# Zero disables swap readahead completely.
-# The default value is three (eight pages at a time).  There may be some
-# small benefits in tuning this to a different value if your workload is
-# swap-intensive.
-# Lower values mean lower latencies for initial faults, but at the same time
-# extra faults and I/O delays for following faults if they would have been part of
-# that consecutive pages readahead would have brought in.
-page_cluster=/proc/sys/vm/page-cluster
-if [ -e $page_cluster ]; then
-	write $page_cluster "0"		
-	sendToLog "page_cluster=0"
-fi;
-
-# vm.dirty_expire_centisecs is how long something can be in cache
-# before it needs to be written.
-# When the pdflush/flush/kdmflush processes kick in they will
-# check to see how old a dirty page is, and if it’s older than this value it’ll
-# be written asynchronously to disk. Since holding a dirty page in memory is
-# unsafe this is also a safeguard against data loss.
-dirty_expire_centisecs=/proc/sys/vm/dirty_expire_centisecs
-if [ -e $dirty_expire_centisecs ]; then
-	write $dirty_expire_centisecs "500"		
-	sendToLog "dirty_expire_centisecs=500"
-fi;
-
-# vm.dirty_writeback_centisecs is how often the pdflush/flush/kdmflush processes wake up
-# and check to see if work needs to be done.
-dirty_writeback_centisecs=/proc/sys/vm/dirty_writeback_centisecs
-if [ -e $dirty_writeback_centisecs ]; then
-	write $dirty_writeback_centisecs "1000"		
-	sendToLog "dirty_writeback_centisecs=1000"
-fi;
-
-# vm.dirty_background_ratio is the percentage of system memory(RAM)
-# that can be filled with “dirty” pages — memory pages that
-# still need to be written to disk — before the pdflush/flush/kdmflush
-# background processes kick in to write it to disk.
-# It can be 50% or less of dirtyRatio
-# If ( dirty_background_ratio >= dirty_ratio ) {
-# dirty_background_ratio = dirty_ratio / 2 (or 4)
-dirty_background_ratio=/proc/sys/vm/dirty_background_ratio
-if [ -e $dirty_background_ratio ]; then
-	write $dirty_background_ratio "5"		
-	sendToLog "dirty_background_ratio=5"
-fi;
-
-# vm.dirty_ratio is the absolute maximum amount of system memory
-# that can be filled with dirty pages before everything must get committed to disk.
-# When the system gets to this point all new I/O blocks until dirty pages
-# have been written to disk. This is often the source of long I/O pauses,
-# but is a safeguard against too much data being cached unsafely in memory.
-dirty_ratio=/proc/sys/vm/dirty_ratio
-if [ -e $dirty_ratio ]; then
-	write $dirty_ratio "30"		
-	sendToLog "dirty_ratio=30"
-fi;
-
-sendToLog "Battery virtual memory tweaks activated"
-sendToLog "$divider";
-}
-
-virtualMemoryTweaksPerformance() {
-sendToLog "Activating performance virtual memory tweaks..."
-
-sync
-
-leases_enable=/proc/sys/fs/leases-enable
-if [ -e $leases_enable ]; then
-	write $leases_enable "1"
-	sendToLog "leases_enable=1"
-fi;
-
-# This file specifies the grace period (in seconds) that the kernel grants
-# to a process holding a file lease after it has sent a signal to that process
-# notifying it that another process is waiting to open the file.
-# If the lease holder does not remove or downgrade the lease within this grace period,
-# the kernel forcibly breaks the lease.
-
-lease_break_time=/proc/sys/fs/lease-break-time
-if [ -e $lease_break_time ]; then
-	write $lease_break_time "20"
-	sendToLog "lease_break_time=20"
-fi;
-
-# dnotify is a signal used to notify a process about file/directory changes.
-dir_notify_enable=/proc/sys/fs/dir-notify-enable
-if [ -e $dir_notify_enable ]; then
-	write $dir_notify_enable "0"
-	sendToLog "dir_notify_enable=0"
-fi;
-
-sendToLog "File system parameters are updated"
-
-enable_process_reclaim=/sys/module/process_reclaim/parameters/enable_process_reclaim
-if [ -e $enable_process_reclaim ]; then
-	write $enable_process_reclaim "0"
-	sendToLog "Reclaiming pages of inactive tasks disabled"
-fi;
-
-# This parameter tells how much of physical RAM to take when swap is full
-overcommit_ratio=/proc/sys/vm/overcommit_ratio
-if [ -e $overcommit_ratio ]; then
-	write $overcommit_ratio "0"
-	sendToLog "overcommit_ratio=0"
-fi;
-
-oom_dump_tasks=/proc/sys/vm/oom_dump_tasks
-if [ -e $oom_dump_tasks ]; then
-	write $oom_dump_tasks "0"
-	sendToLog "oom_dump_tasks=0"
-fi;
-
-vfs_cache_pressure=/proc/sys/vm/vfs_cache_pressure
-if [ -e $vfs_cache_pressure ]; then
-	write $vfs_cache_pressure "100"
-	sendToLog "vfs_cache_pressure=100"
-fi;
-
-laptop_mode=/proc/sys/vm/laptop_mode
-if [ -e $laptop_mode ]; then
-	write $laptop_mode "0"
-	sendToLog "laptop_mode=0"
-fi;
-
-# page-cluster controls the number of pages up to which consecutive pages
-# are read in from swap in a single attempt. This is the swap counterpart
-# to page cache readahead.
-# The mentioned consecutivity is not in terms of virtual/physical addresses,
-# but consecutive on swap space - that means they were swapped out together.
-# It is a logarithmic value - setting it to zero means "1 page", setting
-# it to 1 means "2 pages", setting it to 2 means "4 pages", etc.
-# Zero disables swap readahead completely.
-# The default value is three (eight pages at a time).  There may be some
-# small benefits in tuning this to a different value if your workload is
-# swap-intensive.
-# Lower values mean lower latencies for initial faults, but at the same time
-# extra faults and I/O delays for following faults if they would have been part of
-# that consecutive pages readahead would have brought in.
-page_cluster=/proc/sys/vm/page-cluster
-if [ -e $page_cluster ]; then
-	write $page_cluster "0"
-	sendToLog "page_cluster=0"
-fi;
-
-# vm.dirty_expire_centisecs is how long something can be in cache
-# before it needs to be written.
-# When the pdflush/flush/kdmflush processes kick in they will
-# check to see how old a dirty page is, and if it’s older than this value it’ll
-# be written asynchronously to disk. Since holding a dirty page in memory is
-# unsafe this is also a safeguard against data loss.
-dirty_expire_centisecs=/proc/sys/vm/dirty_expire_centisecs
-if [ -e $dirty_expire_centisecs ]; then
-	write $dirty_expire_centisecs "250"
-	sendToLog "dirty_expire_centisecs=250"
-fi;
-
-# vm.dirty_writeback_centisecs is how often the pdflush/flush/kdmflush processes wake up
-# and check to see if work needs to be done.
-dirty_writeback_centisecs=/proc/sys/vm/dirty_writeback_centisecs
-if [ -e $dirty_writeback_centisecs ]; then
-	write $dirty_writeback_centisecs "700"
-	sendToLog "dirty_writeback_centisecs=700"
-fi;
-
-# vm.dirty_background_ratio is the percentage of system memory(RAM)
-# that can be filled with “dirty” pages — memory pages that
-# still need to be written to disk — before the pdflush/flush/kdmflush
-# background processes kick in to write it to disk.
-# It can be 50% or less of dirtyRatio
-# If ( dirty_background_ratio >= dirty_ratio ) {
-# dirty_background_ratio = dirty_ratio / 2 (or 4)
-dirty_background_ratio=/proc/sys/vm/dirty_background_ratio
-if [ -e $dirty_background_ratio ]; then
-	write $dirty_background_ratio "5"
-	sendToLog "dirty_background_ratio=5"
-fi;
-
-# vm.dirty_ratio is the absolute maximum amount of system memory
-# that can be filled with dirty pages before everything must get committed to disk.
-# When the system gets to this point all new I/O blocks until dirty pages
-# have been written to disk. This is often the source of long I/O pauses,
-# but is a safeguard against too much data being cached unsafely in memory.
-dirty_ratio=/proc/sys/vm/dirty_ratio
-if [ -e $dirty_ratio ]; then
-	write $dirty_ratio "10"
-	sendToLog "dirty_ratio=10"
-fi;
-
-sendToLog "Performance virtual memory tweaks activated"
-sendToLog "$divider";
+	sendToLog "Virtual memory tweaks successfully applied $profile profile"
+	sendToLog "$divider";
 }
 
 heapOptimization() {
-heapSize=$((memTotal*3/16));
+	heapSize=$((memTotal*3/16));
 
-# Don't use more than 512mb
-if [ "$heapSize" -gt "512" ]; then
-	heapSize=512;
-fi
+	# Don't use more than 512mb
+	if [ "$heapSize" -gt "512" ]; then
+		heapSize=512;
+	fi
 
-heapGrowthLimit=$((heapSize*5/11));
+	heapGrowthLimit=$((heapSize*5/11));
 
-sendToLog "Activating heap optimization";
+	sendToLog "Activating heap optimization";
 
-# The ideal ratio of live to free memory. It's good to have a value between 0.2 and 0.9.
-# This limit the managed hepSize to heapsize*heaptargetutilization so it won't be full every time
-setprop dalvik.vm.heaptargetutilization 0.80
-sendToLog "heapTargetUtilization=0.80";
+	# The ideal ratio of live to free memory. It's good to have a value between 0.2 and 0.9.
+	# This limit the managed hepSize to heapsize*heaptargetutilization so it won't be full every time
+	setprop dalvik.vm.heaptargetutilization 0.80
+	sendToLog "heapTargetUtilization=0.80";
 
-# This is the heap size that Dalvik/ART assigns to every new ‘large’ App.
-# Large Apps are the ones that include the ‘android:largeHeap’ option in their manifest.
-# Note that many apps abuse this option, in an effort to increase their performance.
-setprop dalvik.vm.heapsize "$((heapSize))m"
-sendToLog "heapSize=$((heapSize))m";
+	# This is the heap size that Dalvik/ART assigns to every new ‘large’ App.
+	# Large Apps are the ones that include the ‘android:largeHeap’ option in their manifest.
+	# Note that many apps abuse this option, in an effort to increase their performance.
+	setprop dalvik.vm.heapsize "$((heapSize))m"
+	sendToLog "heapSize=$((heapSize))m";
 
-# This is the heap size that is assigned to standard Apps.
-# This should typically be no more than half the dalvik.vm.heapsize value.
-setprop dalvik.vm.heapgrowthlimit "$((heapGrowthLimit))m"
-sendToLog "heapgrowthlimit=$((heapGrowthLimit))m";
+	# This is the heap size that is assigned to standard Apps.
+	# This should typically be no more than half the dalvik.vm.heapsize value.
+	setprop dalvik.vm.heapgrowthlimit "$((heapGrowthLimit))m"
+	sendToLog "heapgrowthlimit=$((heapGrowthLimit))m";
 
-# Forces the free memory to never be larger than the given value.
-setprop dalvik.vm.heapmaxfree 8m
-sendToLog "heapmaxfree=8m";
+	# Forces the free memory to never be larger than the given value.
+	setprop dalvik.vm.heapmaxfree 8m
+	sendToLog "heapmaxfree=8m";
 
-# Forces the free memory to never be smaller than the given value.
-setprop dalvik.vm.heapminfree 2m
-sendToLog "heapminfree=2m";
+	# Forces the free memory to never be smaller than the given value.
+	setprop dalvik.vm.heapminfree 2m
+	sendToLog "heapminfree=2m";
 
-sendToLog "Heap optimization for $((memTotal))mb device activated";
-sendToLog "$divider";
+	sendToLog "Heap optimization for $((memTotal))mb device activated";
+	sendToLog "$divider";
 }
 
 #
@@ -3406,7 +3466,7 @@ setDefaultProfile() {
 	write "$USER_PROFILE"/governor_tuner "0"
 
 	# Entropy section
-	write "$USER_PROFILE"/entropy "0"
+	write "$USER_PROFILE"/entropy "2"
 
 	# GPU section
 	write "$USER_PROFILE"/gpu_optimizer "0"
@@ -3417,11 +3477,10 @@ setDefaultProfile() {
 	write "$USER_PROFILE"/force_4x_msaa "0"
 	
 	# I/O tweaks section
-	write "$USER_PROFILE"/disable_io_stats "-1"
+	write "$USER_PROFILE"/disable_io_stats "1"
 	write "$USER_PROFILE"/io_blocks_optimization "0"
 	write "$USER_PROFILE"/io_extended_queue "0"
 	write "$USER_PROFILE"/scheduler_tuner "0"
-	write "$USER_PROFILE"/sd_tweak "0"
 
 	# LNET tweaks section
 	write "$USER_PROFILE"/dns "0"
@@ -3431,7 +3490,7 @@ setDefaultProfile() {
 	write "$USER_PROFILE"/optimize_ril "0"
 
 	# Other
-	write "$USER_PROFILE"/disable_debugging "0"
+	write "$USER_PROFILE"/disable_debugging "1"
 	write "$USER_PROFILE"/disable_kernel_panic "0"
 
 	# RAM manager section
@@ -3439,8 +3498,8 @@ setDefaultProfile() {
 	write "$USER_PROFILE"/disable_multitasking_limitations "0"
 	write "$USER_PROFILE"/low_ram_flag "-1"
 	write "$USER_PROFILE"/oom_killer "-1"
-	write "$USER_PROFILE"/swappiness "3"
-	write "$USER_PROFILE"/virtual_memory "0"
+	write "$USER_PROFILE"/swappiness "0"
+	write "$USER_PROFILE"/virtual_memory "1"
 	write "$USER_PROFILE"/heap_optimization "0"
 }
 
@@ -3453,7 +3512,7 @@ setPowerSavingProfile() {
 	write "$USER_PROFILE"/governor_tuner "1"
 
 	# Entropy section
-	write "$USER_PROFILE"/entropy "0"
+	write "$USER_PROFILE"/entropy "2"
 
 	# GPU section
 	write "$USER_PROFILE"/gpu_optimizer "1"
@@ -3464,11 +3523,10 @@ setPowerSavingProfile() {
 	write "$USER_PROFILE"/force_4x_msaa "0"
 	
 	# I/O tweaks section
-	write "$USER_PROFILE"/disable_io_stats "-1"
+	write "$USER_PROFILE"/disable_io_stats "1"
 	write "$USER_PROFILE"/io_blocks_optimization "1"
 	write "$USER_PROFILE"/io_extended_queue "0"
 	write "$USER_PROFILE"/scheduler_tuner "1"
-	write "$USER_PROFILE"/sd_tweak "0"
 
 	# LNET tweaks section
 	write "$USER_PROFILE"/dns "0"
@@ -3486,7 +3544,7 @@ setPowerSavingProfile() {
 	write "$USER_PROFILE"/disable_multitasking_limitations "0"
 	write "$USER_PROFILE"/low_ram_flag "-1"
 	write "$USER_PROFILE"/oom_killer "-1"
-	write "$USER_PROFILE"/swappiness "1"
+	write "$USER_PROFILE"/swappiness "0"
 	write "$USER_PROFILE"/virtual_memory "1"
 	write "$USER_PROFILE"/heap_optimization "0"
 }
@@ -3500,7 +3558,7 @@ setBalancedProfile() {
 	write "$USER_PROFILE"/governor_tuner "2"
 
 	# Entropy section
-	write "$USER_PROFILE"/entropy "0"
+	write "$USER_PROFILE"/entropy "2"
 
 	# GPU section
 	write "$USER_PROFILE"/gpu_optimizer "2"
@@ -3511,11 +3569,10 @@ setBalancedProfile() {
 	write "$USER_PROFILE"/force_4x_msaa "0"
 
 	# I/O tweaks section
-	write "$USER_PROFILE"/disable_io_stats "-1"
+	write "$USER_PROFILE"/disable_io_stats "1"
 	write "$USER_PROFILE"/io_blocks_optimization "2"
 	write "$USER_PROFILE"/io_extended_queue "0"
 	write "$USER_PROFILE"/scheduler_tuner "1"
-	write "$USER_PROFILE"/sd_tweak "0"
 
 	# LNET tweaks section
 	write "$USER_PROFILE"/dns "0"
@@ -3533,7 +3590,7 @@ setBalancedProfile() {
 	write "$USER_PROFILE"/disable_multitasking_limitations "0"
 	write "$USER_PROFILE"/low_ram_flag "-1"
 	write "$USER_PROFILE"/oom_killer "-1"
-	write "$USER_PROFILE"/swappiness "3"
+	write "$USER_PROFILE"/swappiness "0"
 	write "$USER_PROFILE"/virtual_memory "2"
 	write "$USER_PROFILE"/heap_optimization "0"
 }
@@ -3547,7 +3604,7 @@ setPerformanceProfile() {
 	write "$USER_PROFILE"/governor_tuner "3"
 
 	# Entropy section
-	write "$USER_PROFILE"/entropy "0"
+	write "$USER_PROFILE"/entropy "2"
 
 	# GPU section
 	write "$USER_PROFILE"/gpu_optimizer "3"
@@ -3558,11 +3615,10 @@ setPerformanceProfile() {
 	write "$USER_PROFILE"/force_4x_msaa "0"
 
 	# I/O tweaks section
-	write "$USER_PROFILE"/disable_io_stats "-1"
+	write "$USER_PROFILE"/disable_io_stats "1"
 	write "$USER_PROFILE"/io_blocks_optimization "3"
-	write "$USER_PROFILE"/io_extended_queue "1"
+	write "$USER_PROFILE"/io_extended_queue "0"
 	write "$USER_PROFILE"/scheduler_tuner "1"
-	write "$USER_PROFILE"/sd_tweak "0"
 
 	# LNET tweaks section
 	write "$USER_PROFILE"/dns "0"
@@ -3572,7 +3628,7 @@ setPerformanceProfile() {
 	write "$USER_PROFILE"/optimize_ril "1"
 
 	# Other
-	write "$USER_PROFILE"/disable_debugging "0"
+	write "$USER_PROFILE"/disable_debugging "1"
 	write "$USER_PROFILE"/disable_kernel_panic "0"
 
 	# RAM manager section
@@ -3580,41 +3636,24 @@ setPerformanceProfile() {
 	write "$USER_PROFILE"/disable_multitasking_limitations "0"
 	write "$USER_PROFILE"/low_ram_flag "-1"
 	write "$USER_PROFILE"/oom_killer "-1"
-	write "$USER_PROFILE"/swappiness "1"
+	write "$USER_PROFILE"/swappiness "0"
 	write "$USER_PROFILE"/virtual_memory "3"
 	write "$USER_PROFILE"/heap_optimization "0"
 }
 
 # Check number of arguments and perform task based on it.
-if [ "$#" -eq 2 ]; then
+if [ "$#" -eq 3 ]; then
 	$BUSYBOX sleep 0.5;
-	"$1" "$2";
+	"$2" "$3";
 	
 	exit 0;
-elif [ "$#" -eq 1 ]; then
+elif [ "$#" -eq 2 ]; then
 	$BUSYBOX sleep 0.5;
-	"$1"
+	"$2"
 	
 	exit 0;
 else
 sendToLog "Starting L Speed";
-
-# Wait for boot completed and then continue with execution, when getprop sys.boot_completed is	
-# equal to 1 while loop will be passed	
-attempts=40	
-wait=5 # Time in seconds	
-bootCompleted=false	
-while [ "$attempts" -gt 0 ] && [ "$(getprop sys.boot_completed)" != "1" ]; do	
-   sendToLog "Waiting for boot_completed"	
-   $BUSYBOX sleep $wait	
-   bootCompleted=true	
-   attempts=$((attempts-1))	
-done	
-
-if [ "$bootCompleted" = true ]; then	
-	sendToLog "Waiting for 1min 30secs before applying"	
-	$BUSYBOX sleep 90;	
-fi
 
 # Read current profile
 currentProfile=$($BUSYBOX cat "$PROFILE" 2>/dev/null);
@@ -3665,43 +3704,43 @@ fi
 # CPU tuner section
 #
 if [ "$($BUSYBOX cat "$USER_PROFILE"/cpu_optimization)" -eq 1 ]; then
-	cpuOptimizationBattery;
+	cpuOptimization $1 1;
 elif [ "$($BUSYBOX cat "$USER_PROFILE"/cpu_optimization)" -eq 2 ]; then
-	cpuOptimizationBalanced;
+	cpuOptimization $1 2;
 elif [ "$($BUSYBOX cat "$USER_PROFILE"/cpu_optimization)" -eq 3 ]; then
-	cpuOptimizationPerformance;
+	cpuOptimization $1 3;
 fi
 
 if [ "$($BUSYBOX cat "$USER_PROFILE"/governor_tuner)" -eq 1 ]; then
-	governorTuner 1
+	governorTuner $1 1
 elif [ "$($BUSYBOX cat "$USER_PROFILE"/governor_tuner)" -eq 2 ]; then
-	governorTuner 2
+	governorTuner $1 2
 elif [ "$($BUSYBOX cat "$USER_PROFILE"/governor_tuner)" -eq 3 ]; then
-	governorTuner 3
+	governorTuner $1 3
 fi
 
 #
 # Entropy section
 #
 if [ "$($BUSYBOX cat "$USER_PROFILE"/entropy)" -eq 1 ]; then
-	entropyLight;
+	entropy 1;
 elif [ "$($BUSYBOX cat "$USER_PROFILE"/entropy)" -eq 2 ]; then
-	entropyEnlarger;
+	entropy 2;
 elif [ "$($BUSYBOX cat "$USER_PROFILE"/entropy)" -eq 3 ]; then
-	entropyModerate;
+	entropy 3;
 elif [ "$($BUSYBOX cat "$USER_PROFILE"/entropy)" -eq 4 ]; then
-	entropyAggressive;
+	entropy 4;
 fi
 
 #
 # GPU section
 #
 if [ "$($BUSYBOX cat "$USER_PROFILE"/gpu_optimizer)" -eq 1 ]; then
-	gpuOptimizerPowerSaving;
+	gpuOptimizer 1;
 elif [ "$($BUSYBOX cat "$USER_PROFILE"/gpu_optimizer)" -eq 2 ]; then
-	gpuOptimizerBalanced;
+	gpuOptimizer 2;
 elif [ "$($BUSYBOX cat "$USER_PROFILE"/gpu_optimizer)" -eq 3 ]; then
-	gpuOptimizerPerformance;
+	gpuOptimizer 3;
 fi
 
 if [ "$($BUSYBOX cat "$USER_PROFILE"/optimize_buffers)" -eq 1 ]; then
@@ -3726,11 +3765,11 @@ elif [ "$($BUSYBOX cat "$USER_PROFILE"/disable_io_stats)" -eq 1 ]; then
 fi
 
 if [ "$($BUSYBOX cat "$USER_PROFILE"/io_blocks_optimization)" -eq 1 ]; then
-	ioBlocksOptimizationPowerSaving;
+	ioBlocksOptimization 1;
 elif [ "$($BUSYBOX cat "$USER_PROFILE"/io_blocks_optimization)" -eq 2 ]; then
-	ioBlocksOptimizationBalanced;
+	ioBlocksOptimization 2;
 elif [ "$($BUSYBOX cat "$USER_PROFILE"/io_blocks_optimization)" -eq 3 ]; then
-	ioBlocksOptimizationPerformance;
+	ioBlocksOptimization 3;
 fi
 
 if [ "$($BUSYBOX cat "$USER_PROFILE"/io_extended_queue)" -eq 1 ]; then
@@ -3741,17 +3780,15 @@ if [ "$($BUSYBOX cat "$USER_PROFILE"/scheduler_tuner)" -eq 1 ]; then
 	schedulerTuner;
 fi
 
-if [ "$($BUSYBOX cat "$USER_PROFILE"/sd_tweak)" -eq 1 ]; then
-	sdTweak;
-fi
-
 #
 # LNET tweaks section
 #
 if [ "$($BUSYBOX cat "$USER_PROFILE"/dns)" -eq 1 ]; then
-	dnsOptimizationGooglePublic;
+	dnsGooglePublic;
 elif [ "$($BUSYBOX cat "$USER_PROFILE"/dns)" -eq 2 ]; then
-	dnsOptimizationCloudFlare;
+	dnsCloudFlare;
+elif [ "$($BUSYBOX cat "$USER_PROFILE"/dns)" -eq 2 ]; then
+	dnsOpenDNS;
 fi
 
 if [ "$($BUSYBOX cat "$USER_PROFILE"/net_buffers)" -eq 1 ]; then
@@ -3805,9 +3842,9 @@ if [ "$($BUSYBOX cat "$USER_PROFILE"/disable_multitasking_limitations)" -eq 1 ];
 fi
 
 if [ "$($BUSYBOX cat "$USER_PROFILE"/low_ram_flag)" -eq 0 ]; then
-	lowRamFlagDisabled;
+	lowRamFlag 0;
 elif [ "$($BUSYBOX cat "$USER_PROFILE"/low_ram_flag)" -eq 1 ]; then
-	lowRamFlagEnabled;
+	lowRamFlag 1;
 fi
 
 if [ "$($BUSYBOX cat "$USER_PROFILE"/oom_killer)" -eq 0 ]; then
@@ -3831,11 +3868,11 @@ elif [ "$($BUSYBOX cat "$USER_PROFILE"/swappiness)" -eq 6 ]; then
 fi
 
 if [ "$($BUSYBOX cat "$USER_PROFILE"/virtual_memory)" -eq 1 ]; then
-	virtualMemoryTweaksBattery;
+	virtualMemoryTweaks 1;
 elif [ "$($BUSYBOX cat "$USER_PROFILE"/virtual_memory)" -eq 2 ]; then
-	virtualMemoryTweaksBalanced;
+	virtualMemoryTweaks 2;
 elif [ "$($BUSYBOX cat "$USER_PROFILE"/virtual_memory)" -eq 3 ]; then
-	virtualMemoryTweaksPerformance;
+	virtualMemoryTweaks 3;
 fi
 
 if [ "$($BUSYBOX cat "$USER_PROFILE"/heap_optimization)" -eq 1 ]; then
@@ -3852,7 +3889,6 @@ runtime=$((end-start))
 sendToLog "Applying took $runtime seconds";
 sendToLog "Successfully applied $profile profile";
 sendToLog "$divider";
-write $IS_EXECUTED "true"
 
 exit 0
 fi

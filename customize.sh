@@ -20,30 +20,6 @@ installApk() {
 
 }
 
-# Extract busybox
-extractBusybox() {
-	ui_print "- Installing binary files for $ARCH arch"
-	if [ $ARCH = "arm64" ] || [ $ARCH = "arm" ]; then
-		cp -f $MODPATH/busybox/arm/busybox $MODPATH/system/etc/lspeed/binary
-		
-		if [ -e $MODPATH/system/etc/lspeed/binary/busybox ]; then
-			ui_print "- Successfully installed binary for $ARCH"
-		else
-			ui_print "- There is a problem installing binary"
-		fi
-	elif [ $ARCH = "x86_64" ] || [ $ARCH = "x86" ]; then
-		cp -f $MODPATH/busybox/x86/busybox $MODPATH/system/etc/lspeed/binary
-		
-		if [ -e $MODPATH/system/etc/lspeed/binary/busybox ]; then
-			ui_print "- Successfully installed binary for $ARCH"
-		else
-			ui_print "- There is a problem installing binary"
-		fi
-	else
-		ui_print "- Arch $ARCH not supported"
-	fi
-}
-
 #
 # Installing manager and extracting busybox
 #
@@ -57,9 +33,6 @@ performInstall() {
 	# Remove app dir from $MODPATH and tmp dir
 	rm -rf $apkDir
 	rm -rf $MODPATH/app
-	
-	# Extracting arch based busybox
-	extractBusybox
 }
 
 setPermissions() {
@@ -67,8 +40,6 @@ setPermissions() {
   set_perm $MODPATH/system/etc/lspeed/binary/busybox 0 0 0777
   set_perm $MODPATH/system/etc/lspeed/binary/main_function 0 0 0777
   set_perm $MODPATH/system/etc/lspeed/binary/governor_tuner 0 0 0777
-  set_perm $MODPATH/system/etc/lspeed/binary/cpu_detect 0 0 0777
-  set_perm $MODPATH/system/etc/lspeed/binary/cpuset_tuner 0 0 0777
 
   # Here are some examples:
   # set_perm_recursive  $MODPATH/system/lib       0     0       0755      0644

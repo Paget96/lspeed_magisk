@@ -1,0 +1,189 @@
+#!/system/bin/sh
+
+########
+#PATHS #
+########
+# Path where logs and setup is stored
+LSPEED_DATA_DIR="$1"
+LOG_DIR=$LSPEED_DATA_DIR/log
+LOG=$LOG_DIR/main_log.log
+
+# Path for executables and busybox
+BINARY_DIR=$LSPEED_DATA_DIR/binary
+BUSYBOX=$BINARY_DIR/busybox
+
+sendToLog() {
+timeZone=$(getprop persist.sys.timezone)
+printDate=$(TZ="$timeZone" $BUSYBOX date +"%H:%M:%S:%3N %d-%m-%Y")
+
+echo "[$printDate] $1" >> $LOG
+}
+
+write() {
+	#chmod 0644 "$1"
+    echo "$2" > "$1"
+}
+
+lockFile() {
+	chmod 0644 "$1"
+    echo "$2" > "$1"
+	chmod 0444 "$1"
+}
+
+if [ $2 = "prime" ]; then 
+	if [ -e $3 ]; then
+		if [ -e $3/up_threshold ]; then
+			lockFile $3/up_threshold "90"
+			sendToLog "up_threshold=90"
+		fi
+	
+		if [ -e $3/up_threshold_any_cpu_load ]; then
+			lockFile $3/up_threshold_any_cpu_load "85"
+			sendToLog "up_threshold_any_cpu_load=85"
+		fi
+		
+		if [ -e $3/up_threshold_multi_core ]; then
+			lockFile $3/up_threshold_multi_core "85"
+			sendToLog "up_threshold_multi_core=85"
+		fi
+		
+		if [ -e $3/sampling_rate ]; then
+			lockFile $3/sampling_rate "75000"
+			sendToLog "sampling_rate=75000"
+		fi
+		
+		if [ -e $3/sampling_down_factor ]; then
+			lockFile $3/sampling_down_factor "2"
+			sendToLog "sampling_down_factor=2"
+		fi
+		
+		if [ -e $3/down_differential ]; then
+			lockFile $3/down_differential "10"
+			sendToLog "down_differential=10"
+		fi
+		
+		if [ -e $3/freq_step ]; then
+			lockFile $3/freq_step "35"
+			sendToLog "freq_step=35"
+		fi
+		
+	fi
+
+elif [ $2 = "big" ]; then 
+	if [ -e $3 ]; then
+		if [ -e $3/up_threshold ]; then
+			lockFile $3/up_threshold "90"
+			sendToLog "up_threshold=90"
+		fi
+	
+		if [ -e $3/up_threshold_any_cpu_load ]; then
+			lockFile $3/up_threshold_any_cpu_load "85"
+			sendToLog "up_threshold_any_cpu_load=85"
+		fi
+		
+		if [ -e $3/up_threshold_multi_core ]; then
+			lockFile $3/up_threshold_multi_core "85"
+			sendToLog "up_threshold_multi_core=85"
+		fi
+		
+		if [ -e $3/sampling_rate ]; then
+			lockFile $3/sampling_rate "75000"
+			sendToLog "sampling_rate=75000"
+		fi
+		
+		if [ -e $3/sampling_down_factor ]; then
+			lockFile $3/sampling_down_factor "2"
+			sendToLog "sampling_down_factor=2"
+		fi
+		
+		if [ -e $3/down_differential ]; then
+			lockFile $3/down_differential "10"
+			sendToLog "down_differential=10"
+		fi
+		
+		if [ -e $3/freq_step ]; then
+			lockFile $3/freq_step "35"
+			sendToLog "freq_step=35"
+		fi
+		
+	fi
+
+elif [ $2 = "little" ]; then 
+	if [ -e $3 ]; then
+		if [ -e $3/up_threshold ]; then
+			lockFile $3/up_threshold "90"
+			sendToLog "up_threshold=90"
+		fi
+	
+		if [ -e $3/up_threshold_any_cpu_load ]; then
+			lockFile $3/up_threshold_any_cpu_load "85"
+			sendToLog "up_threshold_any_cpu_load=85"
+		fi
+		
+		if [ -e $3/up_threshold_multi_core ]; then
+			lockFile $3/up_threshold_multi_core "85"
+			sendToLog "up_threshold_multi_core=85"
+		fi
+		
+		if [ -e $3/sampling_rate ]; then
+			lockFile $3/sampling_rate "75000"
+			sendToLog "sampling_rate=75000"
+		fi
+		
+		if [ -e $3/sampling_down_factor ]; then
+			lockFile $3/sampling_down_factor "2"
+			sendToLog "sampling_down_factor=2"
+		fi
+		
+		if [ -e $3/down_differential ]; then
+			lockFile $3/down_differential "10"
+			sendToLog "down_differential=10"
+		fi
+		
+		if [ -e $3/freq_step ]; then
+			lockFile $3/freq_step "35"
+			sendToLog "freq_step=35"
+		fi
+		
+	fi
+	
+elif [ $2 = "regular" ]; then 
+	if [ -e $3 ]; then
+		if [ -e $3/up_threshold ]; then
+			lockFile $3/up_threshold "90"
+			sendToLog "up_threshold=90"
+		fi
+	
+		if [ -e $3/up_threshold_any_cpu_load ]; then
+			lockFile $3/up_threshold_any_cpu_load "85"
+			sendToLog "up_threshold_any_cpu_load=85"
+		fi
+		
+		if [ -e $3/up_threshold_multi_core ]; then
+			lockFile $3/up_threshold_multi_core "85"
+			sendToLog "up_threshold_multi_core=85"
+		fi
+		
+		if [ -e $3/sampling_rate ]; then
+			lockFile $3/sampling_rate "75000"
+			sendToLog "sampling_rate=75000"
+		fi
+		
+		if [ -e $3/sampling_down_factor ]; then
+			lockFile $3/sampling_down_factor "2"
+			sendToLog "sampling_down_factor=2"
+		fi
+		
+		if [ -e $3/down_differential ]; then
+			lockFile $3/down_differential "10"
+			sendToLog "down_differential=10"
+		fi
+		
+		if [ -e $3/freq_step ]; then
+			lockFile $3/freq_step "35"
+			sendToLog "freq_step=35"
+		fi
+		
+	fi
+
+fi
